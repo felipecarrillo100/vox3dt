@@ -1,0 +1,27 @@
+[project]
+name = "vox3dt"
+version = "0.1.0"
+description = "LAS/LAZ point clouds to georeferenced OGC 3D Tiles voxel pyramids"
+readme = "README.md"
+# Runs on 3.10+; nothing here needs newer syntax.
+requires-python = ">=3.10"
+dependencies = [
+    "laspy>=2.7.0",
+    "lazrs>=0.8.1",
+    "numpy>=1.24",
+    "pyproj>=3.6",
+]
+
+[project.optional-dependencies]
+# Draco applies to baked geometry only -- see gltfwriter's module docstring.
+draco = ["DracoPy>=1.4"]
+
+[project.scripts]
+vox3dt = "vox3dt.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vox3dt"]
