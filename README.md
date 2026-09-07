@@ -92,14 +92,42 @@ To publish, upload the `.gz` files under the original key names with
 | `--draco-bits` | `14` | Draco position quantization bits |
 | `--palette-bits` | `2` | Instanced mode: colour palette size (2 → ≤64 entries) |
 | `--chunk-points` | `5,000,000` | Points per LAS read pass; lower to cut peak memory |
+| `--memory-budget` | `256` MB | Approx. RAM per pyramid level before spilling to `<output>/temp/`; lower to cut peak memory further, at the cost of more disk I/O |
+| `--keep-temp` | off | Don't delete `<output>/temp/` when the run finishes (debugging) |
+| `--epsg` | none | Assume this EPSG when the LAS declares no CRS (ignored, with a notice, if it already has one) |
+| `--info` | off | Print header-only metadata and exit — no point data is read, so it's fast on any file size. `--output` is not required |
 
 Output:
 
 ```
-<output>/tileset.json     the tileset, with the ENU->ECEF root transform
-<output>/content/*.glb    one binary glTF per tile
-<output>/report.json      per-level tile/cube/byte counts for the run
+<output>/tileset.json        the tileset, with the ENU->ECEF root transform
+                              (omitted entirely for a non-georeferenced tileset)
+<output>/content/*.glb       one binary glTF per tile
+<output>/report.json         per-level tile/cube/byte counts for the run
+<output>/log/conversion.log  a minimal, milestone-only log of the run
+<output>/temp/               working files; deleted when the run finishes
+                              unless --keep-temp is given
 ```
+
+### Inspecting a file before converting it
+
+```bash
+vox3dt -i site.las --info
+```
+
+Reads only the LAS header and VLRs — point count, bounds, CRS, point format,
+compression, density — and returns instantly regardless of file size. Useful
+before committing to a run that may take a while on a large input.
+
+### Files with no declared CRS
+
+If the source LAS declares a CRS, nothing changes. If it doesn't:
+
+- Pass `--epsg <code>` to assume that CRS, as if the header had declared it.
+- Omit it, and vox3dt writes a **non-georeferenced** tileset instead: no
+  ENU→ECEF root `transform`, coordinates are plain local metres, and the
+  `epsg`/`crs_name`/origin fields in `tileset.json` and `report.json` are
+  `null`. This is a deliberate, printed choice, not a silent fallback.
 
 ## Results on the Yaloch sample
 
@@ -165,10 +193,12 @@ output anyway.
 
 ```
 vox3dt/
-  voxelize.py    LAS -> voxel grid + Georeference (CRS, origin, axis signs)
-  pyramid.py     isotropic 2x downsample per level; per-level face exposure
+  voxelize.py    LAS header/streaming -> brick-major voxel runs + Georeference
+  extsort.py     bounded-memory external sort/merge for voxel aggregates
+  pyramid.py     isotropic 2x downsample per level; per-tile face exposure
   gltfwriter.py  GLB writer: baked triangles (optionally Draco) or instanced
   tileset.py     quadtree, box bounding volumes, ENU->ECEF root transform
+  info.py        header-only LAS inspection for --info
   cli.py         argument handling and orchestration
 verify.py        structural verification of a generated tileset
 ```
@@ -197,6 +227,29 @@ error test picks the wrong level. Each level here halves all three axes.
 The surface filter runs **per level**, not once. Coarsening makes the model more
 solid, so the fraction culled grows going up — coarse tiles cover more ground
 but hold proportionally fewer cubes.
+
+### Bounded memory for large inputs
+
+Face exposure needs to know, for every occupied cell, whether each of its 6
+neighbours is occupied — which used to mean sorting a whole pyramid level's
+occupied-cell set in RAM. That doesn't scale to a 100 GB+ input.
+
+The fix is the sort key voxels are streamed under: instead of plain
+`(x, y, z)` order, cells are keyed **brick-major** — grouped into the same
+`--brick`-sized tile buckets the tileset already uses, with a 1-cell margin
+in the key layout carrying a thin "apron" of each tile's boundary-adjacent
+neighbour cells. That apron is exactly the context a tile needs to answer
+its own face-exposure queries correctly, including at tile edges — so the
+whole pipeline processes one tile at a time instead of one whole level.
+
+Cell aggregates are accumulated up to `--memory-budget` (default 256 MB) per
+pyramid level; past that, `extsort.py` spills sorted, unique-by-key runs to
+`<output>/temp/` and reads them back through a bounded k-way merge. Because
+this data is a thin surface, not a solid volume, occupancy drops sharply per
+level, so coarser levels usually never cross the budget and stay resident in
+RAM with zero disk I/O — the same code path handles both cases with no
+branching. Peak memory ends up bounded by `--chunk-points` and
+`--memory-budget`, not by the input file's size.
 
 ### Coordinate systems
 
@@ -359,9 +412,12 @@ Rosetta.
   by a wide margin (0.92 MB gzipped, one draw call per palette entry per tile),
   and now carries colour through `COLOR_0` rather than a material, so the
   grey-render problem should not apply. Needs a real load to confirm.
-- **Not run at production scale.** The 158 M-voxel slice would give roughly 8
-  levels and ~8,500 tiles. The surface filter builds whole-level arrays, which
-  is the most likely thing to need reworking into per-region passes.
+- **The 100 GB+ pipeline is validated on synthetic and small real inputs, not
+  yet on a full production-scale file.** The bounded-memory redesign (see
+  [Bounded memory for large inputs](#bounded-memory-for-large-inputs)) has
+  been checked for correctness — including a forced-spill run reproducing the
+  Yaloch sample's output byte-for-byte — but its peak-memory behaviour on an
+  actual 100 GB+ file is still to be confirmed.
 - **No greedy face merging.** Merging coplanar adjacent faces into larger quads
   should cut baked triangle counts several-fold on flat terrain. Only worth
   doing if `baked` stays the primary encoding.

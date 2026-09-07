@@ -81,31 +81,31 @@ def origin_lonlat(georeference: Georeference) -> tuple[float, float, float]:
 
 
 @dataclass
-class TileSpec:
-    """One tile of the quadtree."""
+class TileMeta:
+    """One tile of the quadtree -- metadata only, no cell data.
+
+    Cell data (index/rgb/faces) is consumed and written as a `.glb` at the
+    moment `pyramid.pyramid_stream` produces each tile's `TileBlock`; only
+    what `build_tree`/`bounding_box` need to assemble `tileset.json` survives
+    afterwards.
+    """
 
     level: int          # 0 = root (coarsest)
     tx: int
     tz: int
     cell_size: float
-    #: Cell-index range in this level's own grid.
+    #: Cell-index range in this level's own grid (full brick square, not a tight fit).
     x0: int
     x1: int
     z0: int
     z1: int
-    #: Selected cells and colours (already surface-filtered).
-    index: np.ndarray
-    rgb: np.ndarray
-    #: (N, 6) bool -- which faces of each cell touch empty space. Baked mode only.
-    faces: np.ndarray
+    #: Vertical extent over this tile's *visible* (surface) cells only.
+    y_min: int
+    y_max: int
 
     @property
     def key(self) -> str:
         return f"L{self.level}_{self.tx}_{self.tz}"
-
-    def centers(self) -> np.ndarray:
-        """Cube centres in tile-content (glTF, y-up) metres."""
-        return (self.index.astype(np.float64) + 0.5) * self.cell_size
 
     def bounding_box(self, y_pad: float = 0.0) -> list[float]:
         """3D Tiles `box`, in dataset-local ENU (east, north, up)."""
@@ -113,8 +113,8 @@ class TileSpec:
         e0, e1 = self.x0 * cs, self.x1 * cs
         # ENU north = -gz, so the cell range [z0, z1) maps to [-z1, -z0].
         n0, n1 = -self.z1 * cs, -self.z0 * cs
-        u0 = float(self.index[:, 1].min()) * cs - y_pad
-        u1 = (float(self.index[:, 1].max()) + 1.0) * cs + y_pad
+        u0 = float(self.y_min) * cs - y_pad
+        u1 = (float(self.y_max) + 1.0) * cs + y_pad
         return [
             (e0 + e1) / 2, (n0 + n1) / 2, (u0 + u1) / 2,
             (e1 - e0) / 2, 0.0, 0.0,
@@ -132,54 +132,13 @@ def pyramid_depth(dims: tuple[int, int, int], brick: int) -> int:
     return depth
 
 
-def tiles_for_level(level, depth, brick, levels, visible):
-    """Split one pyramid level's visible cells into `brick`-sized square tiles.
-
-    `levels` is the pyramid (index 0 = finest); the tileset's level L uses
-    pyramid entry `depth - L`.
-    """
-    lvl = levels[depth - level]
-    index, rgb, faces = visible[depth - level]
-    if len(index) == 0:
-        return []
-
-    tx = index[:, 0] // brick
-    tz = index[:, 2] // brick
-    keys = tx.astype(np.int64) * (1 << 32) + tz.astype(np.int64)
-    order = np.argsort(keys, kind="stable")
-    keys_s, index_s, rgb_s, faces_s = keys[order], index[order], rgb[order], faces[order]
-    uniq, start = np.unique(keys_s, return_index=True)
-    bounds = list(start) + [len(keys_s)]
-
-    out = []
-    for i, key in enumerate(uniq):
-        a, b = bounds[i], bounds[i + 1]
-        t_x, t_z = int(key >> 32), int(key & 0xFFFFFFFF)
-        out.append(
-            TileSpec(
-                level=level,
-                tx=t_x,
-                tz=t_z,
-                cell_size=lvl.cell_size,
-                x0=t_x * brick,
-                x1=(t_x + 1) * brick,
-                z0=t_z * brick,
-                z1=(t_z + 1) * brick,
-                index=index_s[a:b],
-                rgb=rgb_s[a:b],
-                faces=faces_s[a:b],
-            )
-        )
-    return out
-
-
-def build_tree(tiles_by_level: dict[int, list[TileSpec]], depth: int, content_uri) -> dict:
+def build_tree(tiles_by_level: dict[int, list[TileMeta]], depth: int, content_uri) -> dict:
     """Assemble tileset.json. Parent/child links come from quadtree arithmetic."""
-    by_key: dict[int, dict[tuple[int, int], TileSpec]] = {
+    by_key: dict[int, dict[tuple[int, int], TileMeta]] = {
         level: {(t.tx, t.tz): t for t in tiles} for level, tiles in tiles_by_level.items()
     }
 
-    def node(tile: TileSpec) -> dict:
+    def node(tile: TileMeta) -> dict:
         is_leaf = tile.level == depth
         entry: dict = {
             "boundingVolume": {"box": tile.bounding_box()},
