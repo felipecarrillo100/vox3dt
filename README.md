@@ -331,7 +331,7 @@ Dependencies aren't installed, or the virtual environment isn't active. The
 command itself is fine.
 
 ```bash
-cd Voxelization3dtiles
+cd vox3dt 
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[draco]"
