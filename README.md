@@ -8,12 +8,22 @@ lands in the right place on the globe.
 
 ## Install
 
+Python 3.10 or newer. A virtual environment is the least troublesome route —
+see [Troubleshooting](#troubleshooting) if anything goes wrong.
+
 ```bash
-pip install -e .          # laspy, lazrs, numpy, pyproj
-pip install DracoPy       # optional, only needed for --draco
+cd Voxelization3dtiles
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[draco]"
 ```
 
-Python 3.10 or newer.
+The `[draco]` extra pulls in `laspy`, `lazrs`, `numpy`, `pyproj` **and**
+`DracoPy` in one step. Quote it — zsh treats bare square brackets as a glob and
+will error without the quotes. Drop the extra (`pip install -e .`) if you never
+intend to use `--draco`.
+
+Re-run `source .venv/bin/activate` in each new terminal session.
 
 ## Use
 
@@ -22,8 +32,50 @@ Python 3.10 or newer.
 vox3dt -i site.las -o tiles/site --draco --gzip
 
 # Check it
-python verify.py tiles/site site.las
+python3 verify.py tiles/site site.las
 ```
+
+### A worked example
+
+Building the Yaloch slice into `production/yaloch`, run from the repo root:
+
+```bash
+python3 -m vox3dt.cli \
+  -i ../VoxelizationCodeBase/inputdata/MDS_Yaloch_satellite_pointcloud_clipped.las \
+  -o production/yaloch \
+  --draco --gzip
+```
+
+Step by step, this:
+
+1. **Streams the LAS** in 5 M-point batches, snapping each point onto a 1 m grid
+   and averaging the colour of every point that lands in a cell. Memory scales
+   with the number of *occupied voxels*, not the point count, so large inputs
+   are fine. Reads `EPSG:32616` and the grid origin out of the header.
+2. **Builds the LOD pyramid** — here 4 levels at 8 m, 4 m, 2 m and 1 m, the
+   count derived from the site's 357 m extent. Each level halves all three axes,
+   and each is surface-filtered independently so buried cells cost nothing.
+3. **Writes one `.glb` per tile** into `production/yaloch/content/` — 47 tiles,
+   Draco-compressed, colour exact.
+4. **Writes `tileset.json`** with the quadtree, per-level `geometricError`, box
+   bounding volumes and the ENU→ECEF root transform that places the site at
+   lon −89.174263, lat 17.314134.
+5. **Writes `.gz` beside every file** for CDN upload, and a `report.json` with
+   per-level tile, cube and byte counts.
+
+About 11 seconds, 44.6 MB of tiles plus 3.5 MB of gzip sidecars. Verify with:
+
+```bash
+python3 verify.py production/yaloch \
+  ../VoxelizationCodeBase/inputdata/MDS_Yaloch_satellite_pointcloud_clipped.las
+```
+
+`python3 -m vox3dt.cli` and `vox3dt` are interchangeable; the module form works
+without the console script being on `PATH`.
+
+To publish, upload the `.gz` files under the original key names with
+`Content-Encoding: gzip`, and `Content-Type: model/gltf-binary` for the `.glb`s,
+`application/json` for `tileset.json`.
 
 `vox3dt --help` lists every option with examples. The two you need are
 `-i/--input` and `-o/--output`; everything else has a sensible default.
@@ -217,6 +269,85 @@ The Draco mapping check exists because a decode round-trip **cannot** catch a
 mapping error: `DracoPy.decode` resolves attributes by type, so wrong ids and
 mismatched accessors both round-trip perfectly. 495 checks once passed on a
 tileset that could not render.
+
+## Troubleshooting
+
+### `ModuleNotFoundError: No module named 'numpy'`
+
+Dependencies aren't installed, or the virtual environment isn't active. The
+command itself is fine.
+
+```bash
+cd Voxelization3dtiles
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[draco]"
+```
+
+If you already made the venv, you likely just need `source .venv/bin/activate`
+again — it does not persist across terminal sessions.
+
+### `zsh: no matches found: .[draco]`
+
+zsh globs bare square brackets. Quote the argument:
+`pip install -e ".[draco]"`.
+
+### `error: externally-managed-environment`
+
+Homebrew and system Python refuse installs into their own site-packages
+(PEP 668). Use a venv as above, or install into your user site-packages:
+
+```bash
+python3 -m pip install --user laspy lazrs numpy pyproj DracoPy
+```
+
+Append `--break-system-packages` if that is still refused. With a `--user`
+install, `python3 -m vox3dt.cli` works but the bare `vox3dt` command will not —
+see the next item.
+
+### `command not found: vox3dt`
+
+The console script isn't on `PATH`. Either activate the venv
+(`source .venv/bin/activate`), or use the module form, which never needs
+`PATH`:
+
+```bash
+python3 -m vox3dt.cli -i site.las -o tiles/site --draco --gzip
+```
+
+A `pip install --user` puts the script in `~/Library/Python/3.x/bin` on macOS,
+which is not on `PATH` by default.
+
+### `command not found: python`
+
+macOS ships no `python` command — only `python3`. Every example here uses
+`python3`.
+
+### `--draco has no effect in instanced mode`
+
+Deliberate. In instanced mode the mesh is a single 24-vertex cube and all the
+volume lives in the instance buffers, which `KHR_draco_mesh_compression` does
+not touch. Use `--gzip` there, or `--mode baked` if you want Draco.
+
+### `error: input not found: ...`
+
+The path is resolved relative to your current directory. Either `cd` to the repo
+root first, or use an absolute path (`~/git/...`), which is robust to where you
+run from.
+
+### The layer loads in LuciadRIA but renders grey
+
+Colour is arriving through a channel LuciadRIA ignores. See
+[What LuciadRIA accepts](#what-luciadria-accepts) — `baseColorFactor` is not
+honoured, and integer `COLOR_0` out of a Draco payload fails to compile. The
+defaults here avoid both; this should only appear if you have modified the
+writer.
+
+### Apple Silicon
+
+`laspy`, `lazrs`, `pyproj` and `DracoPy` all ship arm64 macOS wheels, so nothing
+compiles from source. If pip does start building, your Python is likely x86 under
+Rosetta.
 
 ## Known gaps
 
