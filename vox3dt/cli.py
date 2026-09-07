@@ -104,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     encoding.add_argument(
         "--draco", action="store_true",
         help="Compress tile geometry with KHR_draco_mesh_compression "
-             "(baked mode only; roughly 3.5x smaller gzipped, colour unchanged)",
+             "(baked mode only; ~4x smaller gzipped, colour unchanged)",
     )
     encoding.add_argument(
         "--mode", choices=("baked", "instanced"), default="baked",

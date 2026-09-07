@@ -12,7 +12,7 @@ Python 3.10 or newer. A virtual environment is the least troublesome route —
 see [Troubleshooting](#troubleshooting) if anything goes wrong.
 
 ```bash
-cd Voxelization3dtiles
+cd vox3dt
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[draco]"
@@ -82,7 +82,7 @@ To publish, upload the `.gz` files under the original key names with
 
 | Option | Default | What it does |
 |---|---|---|
-| `--draco` | off | Compress geometry with `KHR_draco_mesh_compression`. ~3.2× smaller gzipped, colour unchanged |
+| `--draco` | off | Compress geometry with `KHR_draco_mesh_compression`. ~4× smaller gzipped, colour unchanged |
 | `--mode` | `baked` | `baked` = face-culled triangles, works everywhere. `instanced` = `EXT_mesh_gpu_instancing`, ~15× smaller but needs viewer support |
 | `--gzip` | off | Write `.gz` beside each file, for `Content-Encoding: gzip` |
 | `--voxel-size` | `1.0` | Finest voxel size, metres |
@@ -124,7 +124,7 @@ end to end including Draco.
 | `--gzip` | 114.27 MB | 13.89 MB | exact | works |
 | `--mode instanced --gzip` | 4.22 MB | **0.92 MB** | ≤64 palette | untested |
 
-Draco colour is **bit-identical** to the uncompressed output — measured, not
+Draco is **4.0× smaller gzipped** than the uncompressed output, and its colour is **bit-identical** to it — measured, not
 assumed: max per-channel error across all 47 tiles is 0.000. Draco does not
 quantize generic float attributes, so the values survive encoding exactly.
 
