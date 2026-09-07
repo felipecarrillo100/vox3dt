@@ -6,6 +6,7 @@
 # committing them (a single small site is already ~45 MB, and gzip sidecars
 # double the file count).
 out/
+output/
 tiles/
 tileset/
 dist/
