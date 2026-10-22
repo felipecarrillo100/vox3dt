@@ -94,16 +94,17 @@ Only `tileset.json` and `content/` are needed by a viewer; `specs.json`,
 
 Run from the repo root, with the venv active. The LAS declares no CRS, so
 `--epsg` supplies it; the config lists the six yearly GeoTIFFs plus
-`Classification` (= 2025). Roughly 40-50 minutes; output ~19 GB plus `.gz`.
+`Classification` (= 2025). Roughly 40-60 minutes; with `--gzip-only` the
+output is 1.9 GB (19.4 GB of tiles uncompressed).
 
 ```bash
 source .venv/bin/activate
 vox3dt -i input/Mac_complete_pointcloud_shaped_and_gps_2026.las \
   -o production/vale_props \
-  --epsg 31983 --draco --gzip \
+  --epsg 31983 --draco --gzip-only \
   --properties production/vale_props.config.json
 
-# Optional, ~30 minutes: decodes every tile.
+# Optional, ~40 minutes: decodes every tile.
 python3 verify.py production/vale_props input/Mac_complete_pointcloud_shaped_and_gps_2026.las
 ```
 
@@ -544,7 +545,8 @@ Rosetta.
   the orange highlight lands on several neighbouring cubes, or on none —
   consistent with RIA comparing ids as float32 on the GPU. Vale's ids reach
   128 M, so only its westernmost ~2 km of leaf cubes highlight correctly. Being
-  reported to Luciad with a 25 KB synthetic repro.
+  reported to Luciad with a 25 KB synthetic repro. Seen on the b3dm builds;
+  not yet rechecked on the glb ones.
 - **Tilesets built before the northing fix sit one voxel south**, and before
   the fitted transform drift up to 54 m (Vale). Rebuild them.
 - **Vertical datum is assumed ellipsoidal.** If the source LAS uses orthometric
