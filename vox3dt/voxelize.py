@@ -54,7 +54,8 @@ class Georeference:
     signs: tuple[int, int, int] = (1, 1, -1)
 
     def to_world(self, gx, gy, gz):
-        """Grid index -> (easting, northing, height). Vectorized over arrays."""
+        """Grid index -> (easting, northing, height) of the cell's west, north,
+        bottom corner. Vectorized over arrays."""
         ox, oy, oz = self.origin
         vs = self.voxel_size
         return (ox + gx * vs, oy - gz * vs, oz + gy * vs)
@@ -153,12 +154,15 @@ def read_grid_spec(las_path: Path, voxel_size: float = 1.0, epsg_override: int |
     dims = np.maximum(1, np.floor((g_max - g_min) / voxel_size).astype(np.int64) + 1)
     nx, ny, nz = (int(v) for v in dims)
 
-    # Grid (0,0,0) is at min easting, min height, and -- because z is mirrored
-    # -- the *max* northing that the floor() indexing can express.
+    # Grid (0,0,0)'s outer corner: min easting, min height, and -- because z
+    # is mirrored -- the *north* edge of the northernmost row. That row is LAS
+    # row nz-1, spanning [minN + (nz-1)*vs, minN + nz*vs), and glTF draws grid
+    # row gz over z in [gz*vs, (gz+1)*vs], i.e. north in [oy-(gz+1)*vs, oy-gz*vs].
+    # So oy must be minN + nz*vs; minN + (nz-1)*vs drew everything one voxel south.
     georeference = Georeference(
         epsg=epsg,
         crs_name=crs_name,
-        origin=(float(mins[0]), float(mins[1] + (nz - 1) * voxel_size), float(mins[2])),
+        origin=(float(mins[0]), float(mins[1] + nz * voxel_size), float(mins[2])),
         voxel_size=voxel_size,
     )
 

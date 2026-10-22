@@ -58,10 +58,12 @@ Step by step, this:
 3. **Writes one `.glb` per tile** into `production/yaloch/content/` — 47 tiles,
    Draco-compressed, colour exact.
 4. **Writes `tileset.json`** with the quadtree, per-level `geometricError`, box
-   bounding volumes and the ENU→ECEF root transform that places the site at
-   lon −89.174263, lat 17.314134.
-5. **Writes `.gz` beside every file** for CDN upload, and a `report.json` with
-   per-level tile, cube and byte counts.
+   bounding volumes fitted tightly to the drawn cubes, and a root transform
+   fitted to the projection that places the grid origin at lon −89.174263,
+   lat 17.314143, every cube within ~1 mm of where the CRS puts it.
+5. **Writes `.gz` beside every file** for CDN upload, `specs.json` with the
+   georeference and grid details, and a `report.json` with per-level tile,
+   cube and byte counts.
 
 About 11 seconds, 44.6 MB of tiles plus 3.5 MB of gzip sidecars. Verify with:
 
@@ -75,7 +77,35 @@ without the console script being on `PATH`.
 
 To publish, upload the `.gz` files under the original key names with
 `Content-Encoding: gzip`, and `Content-Type: model/gltf-binary` for the `.glb`s,
-`application/json` for `tileset.json`.
+`application/json` for `tileset.json`. Every tile is a `.glb`, with or without
+properties.
+
+`--gzip-only` keeps only the gzipped files on disk, `tileset.json.gz` and
+`content/*.glb.gz` — on Yaloch with Draco, 4.7 MB of content instead of 50 MB.
+The tileset still names its tiles `.glb`, so whatever serves them must answer a
+request for `tileset.json` or `content/X.glb` with the `.gz` file and
+`Content-Encoding: gzip` (an Apache rewrite, or the upload storing each `.gz`
+under its plain key). A plain static server such as
+`python -m http.server` will 404 every tile. `verify.py` reads either layout.
+Only `tileset.json` and `content/` are needed by a viewer; `specs.json`,
+`report.json` and `log/` are for you.
+
+### Building Vale with its classification rasters
+
+Run from the repo root, with the venv active. The LAS declares no CRS, so
+`--epsg` supplies it; the config lists the six yearly GeoTIFFs plus
+`Classification` (= 2025). Roughly 40-50 minutes; output ~19 GB plus `.gz`.
+
+```bash
+source .venv/bin/activate
+vox3dt -i input/Mac_complete_pointcloud_shaped_and_gps_2026.las \
+  -o production/vale_props \
+  --epsg 31983 --draco --gzip \
+  --properties production/vale_props.config.json
+
+# Optional, ~30 minutes: decodes every tile.
+python3 verify.py production/vale_props input/Mac_complete_pointcloud_shaped_and_gps_2026.las
+```
 
 `vox3dt --help` lists every option with examples. The two you need are
 `-i/--input` and `-o/--output`; everything else has a sensible default.
@@ -85,6 +115,7 @@ To publish, upload the `.gz` files under the original key names with
 | `--draco` | off | Compress geometry with `KHR_draco_mesh_compression`. ~4× smaller gzipped, colour unchanged |
 | `--mode` | `baked` | `baked` = face-culled triangles, works everywhere. `instanced` = `EXT_mesh_gpu_instancing`, ~15× smaller but needs viewer support |
 | `--gzip` | off | Write `.gz` beside each file, for `Content-Encoding: gzip` |
+| `--gzip-only` | off | Like `--gzip`, but tiles and `tileset.json` are written only as `.gz`, with no uncompressed copy |
 | `--voxel-size` | `1.0` | Finest voxel size, metres |
 | `--brick` | `64` | Cells per tile edge in X/Z. Larger = fewer, heavier tiles |
 | `--levels` | derived | LOD level count. Default sizes the root to cover the whole site |
@@ -96,14 +127,21 @@ To publish, upload the `.gz` files under the original key names with
 | `--keep-temp` | off | Don't delete `<output>/temp/` when the run finishes (debugging) |
 | `--epsg` | none | Assume this EPSG when the LAS declares no CRS (ignored, with a notice, if it already has one) |
 | `--info` | off | Print header-only metadata and exit — no point data is read, so it's fast on any file size. `--output` is not required |
+| `--property` | none | `NAME=PATH`: sample a GeoTIFF into a per-cube property (`EXT_structural_metadata`). Repeatable. Adds `FeatureID` |
+| `--properties` | none | JSON config listing properties, for full control — see [Per-cube properties from GeoTIFFs](#per-cube-properties-from-geotiffs) |
 
 Output:
 
 ```
-<output>/tileset.json        the tileset, with the ENU->ECEF root transform
-                              (omitted entirely for a non-georeferenced tileset)
-<output>/content/*.glb       one binary glTF per tile
+<output>/tileset.json        the tileset -- standard 3D Tiles fields only, with
+                              the fitted grid->ECEF root transform (omitted entirely
+                              for a non-georeferenced tileset)
+<output>/content/*.glb       one binary glTF per tile, with or without properties
+<output>/specs.json          developer reference: georeference, grid, encoding,
+                              FeatureID, and per property its source raster and
+                              the GeoTIFF colour of each class code
 <output>/report.json         per-level tile/cube/byte counts for the run
+<output>/properties.config.json  copy of --properties, when given
 <output>/log/conversion.log  a minimal, milestone-only log of the run
 <output>/temp/               working files; deleted when the run finishes
                               unless --keep-temp is given
@@ -125,14 +163,69 @@ If the source LAS declares a CRS, nothing changes. If it doesn't:
 
 - Pass `--epsg <code>` to assume that CRS, as if the header had declared it.
 - Omit it, and vox3dt writes a **non-georeferenced** tileset instead: no
-  ENU→ECEF root `transform`, coordinates are plain local metres, and the
-  `epsg`/`crs_name`/origin fields in `tileset.json` and `report.json` are
+  root `transform`, coordinates are plain local metres, and the
+  `epsg`/`crs_name`/origin fields in `specs.json` and `report.json` are
   `null`. This is a deliberate, printed choice, not a silent fallback.
+
+### Per-cube properties from GeoTIFFs
+
+```bash
+# One raster per property, everything else detected from the raster.
+vox3dt -i site.las -o tiles/site --draco --property Classification=landcover.tif
+
+# Or a config, e.g. one classification per year.
+vox3dt -i vale.las -o tiles/vale --epsg 31983 --draco --properties props.json
+```
+
+```json
+{
+  "properties": [
+    { "name": "Classification_2020", "file": "classified_2020.tif", "kind": "categorical" },
+    { "name": "Classification_2025", "file": "classified_2025.tif", "kind": "categorical",
+      "labels": { "3": "vegetation" } },
+    { "name": "Intensity", "file": "intensity.tif", "kind": "continuous" }
+  ]
+}
+```
+
+Keys: `name` and `file` (required; relative paths resolve against the config's
+folder), `band` (default 1), `kind` (`categorical` / `continuous`, default
+detected: categorical when the raster has a colour table), `labels` and
+`colors` (code → text / `#rrggbb`, used in `specs.json` only), and an optional
+`defaults` object applied to every entry. Needs `pip install -e ".[raster]"`.
+
+With any property the tiles stay `.glb` and carry it as **3D Tiles 1.1
+metadata**, so every cube is a feature:
+
+- an **`EXT_structural_metadata`** property table (class `cube`, schema embedded
+  in each tile) with **`FeatureID`** (`INT32`, unique per cube across the whole
+  tileset — what a click returns) plus one column per property, the column type
+  following the raster's (`UINT8` for a byte classification, `FLOAT32` for a
+  continuous one);
+- a per-vertex **`_FEATURE_ID_0`** under **`EXT_mesh_features`**, constant over
+  all faces of a cube: its row in the table. Inside Draco it is
+  `UNSIGNED_SHORT`, or `FLOAT` in a tile with more than 65,536 cubes (listed in
+  `report.json`); uncompressed it is always `FLOAT`;
+- `tileset.json`'s standard `properties` block declaring each column's range,
+  which LuciadRIA needs before it will bind a mesh attribute.
+
+LuciadRIA 2025.0 and 2026.1 style (`attributes` + `meshStyle`) and pick on these
+exactly as they did on the earlier b3dm batch tables, Draco included. In 2026.x
+use `map.pickAtAsync`: the synchronous `pickAt` no longer returns 3D Tiles hits.
+
+Values: a cube narrower than a raster pixel reads the pixel under its centre;
+a wider cube takes the **majority** (categorical) or **mean** (continuous) of
+the valid pixels whose centres lie in its footprint. Nodata pixels are filled
+from the nearest valid pixel; `specs.json` records how many cubes that
+affected. Raster and LAS CRS may differ — cube centres are reprojected.
+
+Every raster is opened and checked — CRS, band, coverage of the LAS bounds —
+before any point is read, so a bad config fails in seconds.
 
 ## Results on the Yaloch sample
 
 9,912,680 points → 264,209 voxels at 1 m, EPSG:32616 (WGS 84 / UTM 16N),
-landing at lon −89.174263, lat 17.314134 — Petén, Guatemala. About 11 s
+landing at lon −89.174263, lat 17.314143 — Petén, Guatemala. About 11 s
 end to end including Draco.
 
 **Pyramid** — 4 levels, derived from the 357 m extent at 64-cell tiles:
@@ -197,8 +290,9 @@ vox3dt/
   extsort.py     bounded-memory external sort/merge for voxel aggregates
   pyramid.py     isotropic 2x downsample per level; per-tile face exposure
   gltfwriter.py  GLB writer: baked triangles (optionally Draco) or instanced
-  tileset.py     quadtree, box bounding volumes, ENU->ECEF root transform
+  tileset.py     quadtree, tight box bounding volumes, fitted grid->ECEF root transform
   info.py        header-only LAS inspection for --info
+  rasterprops.py GeoTIFF sampling for --property: nodata fill, footprint majority/mean
   cli.py         argument handling and orchestration
 verify.py        structural verification of a generated tileset
 ```
@@ -260,29 +354,59 @@ branching. Peak memory ends up bounded by `--chunk-points` and
    glTF's right-handed y-up convention. glTF x is east, y is up, z is south.
 3. **Tile space** — the runtime rotates glTF y-up to z-up, giving ENU:
    `(east, north, up) = (x, -z, y)`. Bounding volumes are declared here.
-4. **ECEF** — the root tile's `transform` is ENU→ECEF at the dataset origin.
+4. **ECEF** — the root tile's `transform` maps tile space to ECEF. It is a
+   least-squares affine fit, over the whole site, of *projected* metres
+   (`E = ox + u, N = oy + v, H = oz + w`) to ECEF.
+
+Why a fit and not the ENU frame at the origin: tile space holds projected
+(UTM) metres, not local east/north metres. The UTM grid is rotated from true
+north by the meridian convergence (0.38° at Vale, 0.65° at Yaloch) and scaled
+by the projection's scale factor, so an ENU frame at the origin is exact there
+and drifts with distance — measured 5.7 m across Yaloch and **54 m** at Vale's
+far corner. The fitted affine absorbs both; what remains is the Earth's
+curvature under one flat frame:
+
+| Site | ENU at origin, worst | Fitted transform, worst |
+|---|---|---|
+| Yaloch (357 m) | 5.7 m | 0.001 m horizontal, 0.003 m vertical |
+| Vale (6.9 × 4.9 km) | 54 m horizontal, 5.6 m vertical | 0.23 m horizontal, 0.82 m vertical |
+
+The run prints the residual and `specs.json` records it
+(`georeference.placement_residual`). Per-tile transforms would bring Vale to
+millimetres, at the cost of a chained transform per tile; not needed at 1 m
+voxels.
 
 Only the root carries a `transform`, so all content and bounds are in
-dataset-local ENU metres. At a 7 km site that costs ~0.4 mm of float32
-precision, irrelevant against a 1 m voxel.
+dataset-local metres. At a 7 km site that costs ~0.4 mm of float32 precision,
+irrelevant against a 1 m voxel.
 
 ### Draco attribute ids are probed, never assumed
 
 `KHR_draco_mesh_compression` maps glTF semantics to Draco `unique_id`s, which
 are assigned in attribute *creation* order — not glTF's semantic order, and not
-stably across attribute sets. DracoPy adds POSITION **last**:
+stably across attribute sets — nor across DracoPy versions. DracoPy 2.0.0, read
+back from the payloads it writes, adds POSITION **last**:
 
-| Attributes encoded | Draco `unique_id`s |
+| Attributes encoded | Draco `unique_id`s (DracoPy 2.0.0) |
 |---|---|
-| position only | `POSITION=0` |
-| position + normals | `NORMAL=0`, `POSITION=1` |
-| position + normals + colour | `COLOR_0=0`, `NORMAL=1`, `POSITION=2` |
+| position + normals + colour | `NORMAL=0`, `COLOR_0=1`, `POSITION=2` |
+| … + `_FEATURE_ID_0` (properties) | `NORMAL=0`, `COLOR_0=1`, `_FEATURE_ID_0=2`, `POSITION=3` |
 
-Hardcoding the intuitive `{POSITION: 0, NORMAL: 1, COLOR_0: 2}` pointed POSITION
-at the colour attribute and broke the layer. `draco_attribute_ids()` now probes
-a 4-vertex mesh and reads the ids back from `DracoPy.decode(...).attributes`,
-and refuses to write Draco output if the probe is unclear — a wrong mapping
+An earlier DracoPy produced `COLOR_0=0, NORMAL=1, POSITION=2` for the same
+input, which is exactly why nothing here may depend on the order. Hardcoding
+the intuitive `{POSITION: 0, NORMAL: 1, COLOR_0: 2}` pointed POSITION at the
+colour attribute and broke the layer. `draco_attribute_ids()` probes a 4-vertex
+mesh and reads the ids back from `DracoPy.decode(...).attributes` — colour and
+`_FEATURE_ID_0` are both GENERIC, so they are told apart by component count (3 vs 1)
+— and refuses to write Draco output if the probe is unclear: a wrong mapping
 loads as corrupt geometry, not as an error.
+
+### Draco position quantization is not lossless
+
+`--draco-bits 14` quantizes each tile's positions over the tile's own range, so
+the step is roughly `range / 2^14` and the error up to half that. Measured on
+Vale: **≤ 5 mm** on 1 m leaf tiles, 3 cm on 16 m cubes, 21 cm on the 128 m root
+cubes — always far below the cell size of its level, but not zero.
 
 ### Colour quantization
 
@@ -311,12 +435,23 @@ itself, so this is the only lever on their size.
 `verify.py` checks what would otherwise fail silently in a viewer: GLB
 structure and alignment, accessor bounds, the Draco attribute mapping and
 per-attribute component count and data type, normals staying unit-length and
-axis-aligned through quantization, the root transform against the LAS header's
-CRS and bounding box, quadtree well-formedness, and that every tile's geometry
-lies inside its declared bounding volume.
+axis-aligned through quantization, quadtree well-formedness with every child
+box inside its parent's, and that every tile's geometry lies inside its
+declared bounding volume. Placement is checked end to end: the grid origin
+against the LAS header, the root transform against the CRS on a lattice
+spanning the site, and the outermost cube edges at all four corners against
+the LAS bounds. For tiles with properties it also checks that
+`EXT_mesh_features` points `_FEATURE_ID_0` at a property table holding one
+8-byte-aligned value per feature in every column, that `_FEATURE_ID_0` maps
+cubes to rows one-to-one, that `FeatureID` is unique across the tileset, and
+that property values sit inside `tileset.json`'s declared ranges.
 
-Current: 1,388 checks for `--draco`, 730 uncompressed, 1,855 for `instanced` —
-0 failures.
+Current, 0 failures: Yaloch 1,447 checks plain `.glb` + Draco; 2,530 with two
+properties (a 4-class `UINT8` and a `FLOAT32` raster) + Draco, 1,731 without
+Draco. Vale has not been rebuilt since properties moved from b3dm to glb.
+
+`python3 verify.py <dir> <las> [tileset-file]` checks another tileset file in
+the same folder, e.g. an edited copy of `tileset.json`.
 
 The Draco mapping check exists because a decode round-trip **cannot** catch a
 mapping error: `DracoPy.decode` resolves attributes by type, so wrong ids and
@@ -404,6 +539,14 @@ Rosetta.
 
 ## Known gaps
 
+- **LuciadRIA's selection highlight is wrong for `FeatureID` above 2²⁴
+  (16,777,216).** Picking returns the exact `FeatureID` and properties, but
+  the orange highlight lands on several neighbouring cubes, or on none —
+  consistent with RIA comparing ids as float32 on the GPU. Vale's ids reach
+  128 M, so only its westernmost ~2 km of leaf cubes highlight correctly. Being
+  reported to Luciad with a 25 KB synthetic repro.
+- **Tilesets built before the northing fix sit one voxel south**, and before
+  the fitted transform drift up to 54 m (Vale). Rebuild them.
 - **Vertical datum is assumed ellipsoidal.** If the source LAS uses orthometric
   height — common for surveyed data — the tileset sits off by the local geoid
   separation, tens of metres in Central America. The LAS declares only a

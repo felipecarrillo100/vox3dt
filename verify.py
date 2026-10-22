@@ -1,6 +1,6 @@
 """Structural verification for a generated tileset.
 
-    python verify.py <output-dir> <input.las>
+    python verify.py <output-dir> <input.las> [tileset-file-name]
 
 Checks the things that would otherwise fail silently in a viewer:
 
@@ -13,16 +13,28 @@ Checks the things that would otherwise fail silently in a viewer:
    catch a mismatch here, because DracoPy resolves attributes by type; two
    real bugs reached a browser this way.
 4. Draco normals survive quantization as unit-length, axis-aligned vectors.
-5. The root transform matches EPSG->ECEF of the declared grid origin, that
-   origin matches the LAS header's bounding box, the rotation is orthonormal
-   and right-handed, and the site lands inside its declared UTM zone.
+5. The grid origin matches the LAS header's bounding box, the root transform's
+   axes are near-orthogonal, near unit scale and right-handed, and the site
+   lands inside its CRS's area of use.
 6. The tile tree is a well-formed quadtree: at most 4 children, child
-   geometricError strictly below parent, leaves at 0.
+   geometricError strictly below parent, leaves at 0, and every child's box
+   inside its parent's. The root box is within one root cell of the LAS bounds.
 7. Every tile's geometry lies inside its declared bounding volume.
+8. Placement: the root transform puts a lattice of grid points spanning the
+   site where the projection says, within half a voxel horizontally and one
+   vertically; and the outermost cube edges, pushed through it to ECEF and back
+   into the LAS CRS, land on the LAS bounds -- west and south on them, east and
+   north overhanging by less than one voxel -- at all four corners.
+9. Property tiles (--property): EXT_mesh_features points _FEATURE_ID_0 at an
+   EXT_structural_metadata property table whose columns are 8-byte aligned and
+   hold one value per feature; _FEATURE_ID_0 is an integer per vertex, constant
+   over each cube, mapping cubes to rows one-to-one; FeatureID is unique across
+   the tileset, and property values lie inside tileset.json's declared ranges.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import math
 import struct
@@ -41,11 +53,23 @@ def check(cond: bool, label: str) -> bool:
 
 
 def parse_glb(path: Path) -> tuple[dict, bytes]:
-    raw = path.read_bytes()
+    """Parse a tile by its .glb name, reading the .glb.gz twin when only that exists (--gzip-only)."""
+    if path.exists():
+        return parse_glb_bytes(path.name, path.read_bytes())
+    return parse_glb_bytes(path.name, gzip.decompress(path.with_name(path.name + ".gz").read_bytes()))
+
+
+def tile_paths(content: Path) -> list[Path]:
+    """Every tile, by its .glb name, whether it is on disk raw or only gzipped."""
+    names = {p.name for p in content.glob("*.glb")} | {p.name[:-3] for p in content.glob("*.glb.gz")}
+    return [content / n for n in sorted(names)]
+
+
+def parse_glb_bytes(name: str, raw: bytes) -> tuple[dict, bytes]:
     magic, version, length = struct.unpack_from("<4sII", raw, 0)
-    assert magic == b"glTF", f"{path.name}: bad magic {magic!r}"
-    assert version == 2, f"{path.name}: version {version}"
-    assert length == len(raw), f"{path.name}: header length {length} != file {len(raw)}"
+    assert magic == b"glTF", f"{name}: bad magic {magic!r}"
+    assert version == 2, f"{name}: version {version}"
+    assert length == len(raw), f"{name}: header length {length} != content {len(raw)}"
     offset, js, binary = 12, None, b""
     while offset < len(raw):
         clen, ctype = struct.unpack_from("<I4s", raw, offset)
@@ -55,8 +79,8 @@ def parse_glb(path: Path) -> tuple[dict, bytes]:
         elif ctype == b"BIN\x00":
             binary = data
         offset += 8 + clen
-        assert offset % 4 == 0, f"{path.name}: chunk not 4-byte aligned"
-    assert js is not None, f"{path.name}: no JSON chunk"
+        assert offset % 4 == 0, f"{name}: chunk not 4-byte aligned"
+    assert js is not None, f"{name}: no JSON chunk"
     return js, binary
 
 
@@ -82,7 +106,7 @@ def check_accessors(name: str, gltf: dict, binary: bytes) -> None:
 
 
 #: glTF semantic -> Draco GeometryAttribute::Type
-_SEMANTIC_ATT = {"POSITION": 0, "NORMAL": 1, "COLOR_0": 2, "TEXCOORD_0": 3}
+_SEMANTIC_ATT = {"POSITION": 0, "NORMAL": 1, "COLOR_0": 2, "TEXCOORD_0": 3, "_FEATURE_ID_0": 4}
 #: glTF componentType -> Draco DataType
 _COMPONENT_DT = {5121: 2, 5123: 4, 5125: 6, 5126: 9}
 _TYPE_COMPONENTS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
@@ -208,30 +232,28 @@ def _check_draco_primitive(name: str, gltf: dict, prim: dict, ext: dict, binary:
         )
 
 
-def check_georeference(tileset: dict, las_path: Path) -> None:
-    from pyproj import Transformer
+def load_georeference(root: Path, tileset: dict) -> dict:
+    """specs.json (current builds) or tileset.json extras (older ones)."""
+    specs = root / "specs.json"
+    if specs.exists():
+        return json.loads(specs.read_text())["georeference"]
+    return tileset["extras"]["georeference"]
+
+
+def check_georeference(tileset: dict, las_path: Path, geo: dict) -> None:
+    from pyproj import CRS, Transformer
 
     import laspy
 
     t = tileset["root"]["transform"]
-    # Column-major: the 4th column is the ECEF origin.
-    ecef_origin = np.array(t[12:15])
-
-    geo = tileset["extras"]["georeference"]
     epsg = geo["horizontal_epsg"]
     o = geo["grid_origin_world"]
+    vs = geo["voxel_size"]
 
-    to_ecef = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4978", always_xy=True)
-    expect = np.array(to_ecef.transform(o["easting"], o["northing"], o["height"]))
-    check(
-        float(np.linalg.norm(ecef_origin - expect)) < 1e-3,
-        f"tileset transform origin matches EPSG:{epsg} -> ECEF "
-        f"(delta {np.linalg.norm(ecef_origin - expect):.6f} m)",
-    )
-
-    # And that origin should sit at the LAS bounding box corner the encoder used.
+    # The grid origin must sit at the LAS bounding-box corner the encoder used.
     header = laspy.open(str(las_path)).header
     mins, maxs = np.asarray(header.mins), np.asarray(header.maxs)
+    nx, ny, nz = (int(math.floor((maxs[i] - mins[i]) / vs)) + 1 for i in (0, 2, 1))
     check(
         abs(o["easting"] - mins[0]) < 1e-6,
         f"grid origin easting == LAS min X ({o['easting']:.3f})",
@@ -240,31 +262,50 @@ def check_georeference(tileset: dict, las_path: Path) -> None:
         abs(o["height"] - mins[2]) < 1e-6,
         f"grid origin height == LAS min Z ({o['height']:.3f})",
     )
-    # Z is mirrored, so the origin northing is at the TOP of the box.
+    # Z is mirrored, so the origin northing is the north edge of the
+    # northernmost row: exactly minN + nz * voxel_size.
     check(
-        mins[1] < o["northing"] <= maxs[1] + 1.0,
-        f"grid origin northing sits at the box top ({o['northing']:.3f}, "
-        f"LAS max Y {maxs[1]:.3f}) -- consistent with the mirrored z axis",
+        abs(o["northing"] - (mins[1] + nz * vs)) < 1e-6,
+        f"grid origin northing == LAS min Y + nz*voxel ({o['northing']:.3f}) -- "
+        "north edge of the northernmost row",
     )
 
-    # Sanity: does it land where the CRS says? UTM 16N covers -90..-84 lon.
+    # The root transform must put tile-space metres where the projection says:
+    # E = ox + u, N = oy + v, H = oz + w. Checked on a lattice spanning the
+    # whole grid, back in the source CRS. A single affine frame cannot follow
+    # the Earth's curvature, so allow half a voxel horizontally, one vertically.
+    m = np.array(t).reshape(4, 4).T  # column-major -> rows
+    u, v, w = (a.ravel() for a in np.meshgrid(
+        np.linspace(0, nx * vs, 11), np.linspace(-nz * vs, 0, 11), np.linspace(0, ny * vs, 3)))
+    placed = (m @ np.stack([u, v, w, np.ones_like(u)]))[:3]
+    back = Transformer.from_crs("EPSG:4978", f"EPSG:{epsg}", always_xy=True)
+    e, n, h = back.transform(*placed)
+    horiz = float(np.hypot(e - (o["easting"] + u), n - (o["northing"] + v)).max())
+    vert = float(np.abs(h - (o["height"] + w)).max())
+    check(horiz < 0.5 * vs, f"root transform places the grid within half a voxel horizontally (worst {horiz:.3f} m)")
+    check(vert < vs, f"root transform places the grid within one voxel vertically (worst {vert:.3f} m)")
+
+    # Sanity: does it land inside the CRS's own area of use?
     to_geog = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4979", always_xy=True)
     lon, lat, _ = to_geog.transform(o["easting"], o["northing"], o["height"])
-    check(-90 <= lon <= -84, f"longitude {lon:.4f} inside UTM zone 16N")
-    check(0 < lat < 84, f"latitude {lat:.4f} in the northern hemisphere")
-    print(f"    -> site at lon {lon:.6f}, lat {lat:.6f}")
+    area = CRS.from_epsg(epsg).area_of_use
+    if area is not None:
+        check(
+            area.west - 1e-9 <= lon <= area.east + 1e-9 and area.south - 1e-9 <= lat <= area.north + 1e-9,
+            f"origin lon {lon:.4f}, lat {lat:.4f} inside EPSG:{epsg}'s area of use",
+        )
+    print(f"    -> site at lon {lon:.6f}, lat {lat:.6f}; worst placement {horiz:.3f} m horizontal, {vert:.3f} m vertical")
 
-    # The ENU basis columns must be orthonormal, or nothing will sit level.
-    m = np.array(t).reshape(4, 4).T  # column-major -> rows
+    # The basis is a fitted affine, not a pure rotation: it carries the
+    # projection's scale factor (well under 0.1% off unity for UTM) and its
+    # convergence. It must still be near-orthogonal, near unit and right-handed.
     basis = m[:3, :3]
-    check(
-        float(np.abs(basis @ basis.T - np.eye(3)).max()) < 1e-9,
-        "root transform rotation is orthonormal",
-    )
-    check(
-        abs(float(np.linalg.det(basis)) - 1.0) < 1e-9,
-        f"root transform is right-handed (det {np.linalg.det(basis):.9f})",
-    )
+    gram = basis.T @ basis
+    scale = np.sqrt(np.diag(gram))
+    check(bool(np.all(np.abs(scale - 1.0) < 1e-3)), f"root transform axis scales near 1 ({scale.round(6).tolist()})")
+    off = np.abs(gram / np.outer(scale, scale) - np.eye(3)).max()
+    check(off < 1e-3, f"root transform axes near-orthogonal (worst cosine {off:.2e})")
+    check(float(np.linalg.det(basis)) > 0, f"root transform is right-handed (det {np.linalg.det(basis):.9f})")
 
 
 def check_bounds(root_dir: Path, tileset: dict) -> None:
@@ -317,6 +358,185 @@ def check_bounds(root_dir: Path, tileset: dict) -> None:
     print(f"    -> {checked} tiles bounds-checked")
 
 
+def check_root_extent(tileset: dict, geo: dict, las_path: Path) -> None:
+    """The root box should hug the LAS bounds: overhang under one root cell."""
+    import laspy
+
+    header = laspy.open(str(las_path)).header
+    mins, maxs = np.asarray(header.mins), np.asarray(header.maxs)
+    o = geo["grid_origin_world"]
+    b = tileset["root"]["boundingVolume"]["box"]
+    c, h = np.array(b[0:3]), np.array([b[3], b[7], b[11]])
+    lo, hi = c - h, c + h  # ENU metres relative to the grid origin
+    las_lo = np.array([mins[0] - o["easting"], mins[1] - o["northing"], mins[2] - o["height"]])
+    las_hi = np.array([maxs[0] - o["easting"], maxs[1] - o["northing"], maxs[2] - o["height"]])
+    root_cell = float(tileset["root"]["geometricError"]) or geo["voxel_size"]
+    over = np.maximum(las_lo - lo, 0) + np.maximum(hi - las_hi, 0)
+    check(bool(np.all(lo <= las_lo + 1e-6) and np.all(hi >= las_hi - 1e-6)),
+          "root box contains the LAS bounds")
+    check(bool(np.all(over <= root_cell + 1e-6)),
+          f"root box overhangs the LAS bounds by under one root cell ({root_cell:g} m): "
+          f"overhang E/N/U {over.round(2).tolist()} m")
+
+
+def check_placement(root_dir: Path, tileset: dict, geo: dict, las_path: Path) -> None:
+    """Outermost cube edges, through the root transform, against the LAS bounds."""
+    from pyproj import Transformer
+
+    import laspy
+
+    header = laspy.open(str(las_path)).header
+    mins, maxs = np.asarray(header.mins), np.asarray(header.maxs)
+    vs = geo["voxel_size"]
+    lo = np.full(3, np.inf)
+    hi = -lo
+    leaves = []
+
+    def walk(node):
+        if node.get("children"):
+            for c in node["children"]:
+                walk(c)
+        elif node.get("content"):
+            leaves.append(node["content"]["uri"])
+
+    walk(tileset["root"])
+    for uri in leaves:
+        gltf, _binary = parse_glb(root_dir / uri)
+        for prim in gltf["meshes"][0]["primitives"]:
+            acc = gltf["accessors"][prim["attributes"]["POSITION"]]
+            lo = np.minimum(lo, acc["min"])
+            hi = np.maximum(hi, acc["max"])
+    M = np.array(tileset["root"]["transform"]).reshape(4, 4).T
+    to_crs = Transformer.from_crs("EPSG:4978", f"EPSG:{geo['horizontal_epsg']}", always_xy=True)
+
+    # The fitted root transform is exact to well under half a voxel horizontally
+    # (see check_georeference), so edges are compared to that tolerance.
+    tol = 0.5 * vs
+
+    def world(x, y, z):  # glTF y-up -> tile space (x, -z, y) -> ECEF -> LAS CRS
+        return np.array(to_crs.transform(*(M @ np.array([x, -z, y, 1.0]))[:3]))
+
+    corners = {"NW": (lo[0], lo[2]), "NE": (hi[0], lo[2]), "SW": (lo[0], hi[2]), "SE": (hi[0], hi[2])}
+    for name, (x, z) in corners.items():
+        e, n, hgt = world(x, lo[1], z)
+        want_e = mins[0] if name.endswith("W") else None
+        if want_e is not None:
+            check(abs(e - want_e) < tol, f"{name} corner: west edge on LAS min X (off {e - want_e:+.3f} m)")
+        else:
+            check(-tol <= e - maxs[0] < vs + tol, f"{name} corner: east edge overhangs LAS max X by < 1 voxel ({e - maxs[0]:+.3f} m)")
+        if name.startswith("S"):
+            check(abs(n - mins[1]) < tol, f"{name} corner: south edge on LAS min Y (off {n - mins[1]:+.3f} m)")
+        else:
+            check(-tol <= n - maxs[1] < vs + tol, f"{name} corner: north edge overhangs LAS max Y by < 1 voxel ({n - maxs[1]:+.3f} m)")
+    _e, _n, bottom = world(lo[0], lo[1], lo[2])
+    check(abs(bottom - mins[2]) < vs, f"bottom on LAS min Z within one voxel of vertical tolerance (off {bottom - mins[2]:+.3f} m)")
+    _e, _n, top = world(lo[0], hi[1], lo[2])
+    check(-vs <= top - maxs[2] < 2 * vs, f"top overhangs LAS max Z by < 1 voxel, give or take one voxel of vertical tolerance ({top - maxs[2]:+.3f} m)")
+
+
+def check_metadata(root_dir: Path, tileset: dict) -> None:
+    """Property tables: schema, alignment, _FEATURE_ID_0 per cube, FeatureID uniqueness, ranges."""
+    import DracoPy
+
+    declared = tileset.get("properties", {})
+    tiles = tile_paths(root_dir / "content")
+    dtypes = {"INT8": "<i1", "UINT8": "<u1", "INT16": "<i2", "UINT16": "<u2", "INT32": "<i4",
+              "UINT32": "<u4", "INT64": "<i8", "UINT64": "<u8", "FLOAT32": "<f4", "FLOAT64": "<f8"}
+    feature_ids = []
+    for path in tiles:
+        gltf, binary = parse_glb(path)
+        prim = gltf["meshes"][0]["primitives"][0]
+        meta = gltf.get("extensions", {}).get("EXT_structural_metadata")
+        mf = prim.get("extensions", {}).get("EXT_mesh_features")
+        if not check(meta is not None and mf is not None, f"{path.name}: EXT_mesh_features + EXT_structural_metadata present"):
+            continue
+        used = gltf.get("extensionsUsed", [])
+        check("EXT_mesh_features" in used and "EXT_structural_metadata" in used,
+              f"{path.name}: metadata extensions listed in extensionsUsed")
+        fids = mf["featureIds"]
+        if not check(len(fids) == 1 and fids[0].get("attribute") == 0 and fids[0].get("propertyTable") == 0,
+                     f"{path.name}: one feature id set, _FEATURE_ID_0 -> property table 0"):
+            continue
+        n = fids[0]["featureCount"]
+        table = meta["propertyTables"][0]
+        cls = meta["schema"]["classes"][table["class"]]["properties"]
+        check(table["count"] == n, f"{path.name}: property table count equals featureCount")
+        check("FeatureID" in table["properties"], f"{path.name}: property table has FeatureID")
+        cols = {}
+        for name, desc in table["properties"].items():
+            comp = cls[name]["componentType"]
+            view = gltf["bufferViews"][desc["values"]]
+            off = view.get("byteOffset", 0)
+            check(off % 8 == 0, f"{path.name}: {name} bufferView 8-byte aligned")
+            check(view["byteLength"] == n * np.dtype(dtypes[comp]).itemsize,
+                  f"{path.name}: {name} holds one {comp} per feature")
+            cols[name] = np.frombuffer(binary, dtypes[comp], n, off)
+        feature_ids.append(cols["FeatureID"])
+        for name, vals in cols.items():
+            if name in declared:
+                d = declared[name]
+                check(bool(vals.min() >= d["minimum"] and vals.max() <= d["maximum"]),
+                      f"{name} values inside tileset.json's declared range")
+
+        ext = prim.get("extensions", {}).get("KHR_draco_mesh_compression")
+        if ext:
+            view = gltf["bufferViews"][ext["bufferView"]]
+            mesh = DracoPy.decode(binary[view.get("byteOffset", 0) : view.get("byteOffset", 0) + view["byteLength"]])
+            pos = mesh.get_attribute_by_unique_id(ext["attributes"]["POSITION"])["data"]
+            nrm = mesh.get_attribute_by_unique_id(ext["attributes"]["NORMAL"])["data"]
+            fid = np.asarray(mesh.get_attribute_by_unique_id(ext["attributes"]["_FEATURE_ID_0"])["data"]).ravel()
+            faces = mesh.faces
+        else:
+            def read(acc_i, comps):
+                acc = gltf["accessors"][acc_i]
+                v = gltf["bufferViews"][acc["bufferView"]]
+                dt = {5126: "<f4", 5123: "<u2", 5125: "<u4"}[acc["componentType"]]
+                return np.frombuffer(binary, dt, acc["count"] * comps, v.get("byteOffset", 0) + acc.get("byteOffset", 0))
+            pos = read(prim["attributes"]["POSITION"], 3).reshape(-1, 3)
+            nrm = read(prim["attributes"]["NORMAL"], 3).reshape(-1, 3)
+            fid = read(prim["attributes"]["_FEATURE_ID_0"], 1)
+            faces = read(prim["indices"], 1).reshape(-1, 3)
+        check(bool(np.all(fid == np.rint(fid))), f"{path.name}: _FEATURE_ID_0 values are integers")
+        fid = np.rint(fid).astype(np.int64)
+        check(bool(fid.min() >= 0 and fid.max() < n), f"{path.name}: _FEATURE_ID_0 inside [0, featureCount)")
+        fb = fid[faces]
+        check(bool(np.all(fb[:, 0] == fb[:, 1]) and np.all(fb[:, 0] == fb[:, 2])),
+              f"{path.name}: _FEATURE_ID_0 constant over each triangle")
+        # Map each triangle to its cube: step a quarter cell inward from the face.
+        cs = _cell_size_of(tileset, path.name)
+        cen = pos[faces].mean(axis=1) - nrm[faces[:, 0]] * (cs * 0.25)
+        cube = np.floor(cen / cs).astype(np.int64)
+        key = (cube[:, 0] * 1_000_003 + cube[:, 1]) * 1_000_003 + cube[:, 2]
+        pairs = np.unique(np.stack([key, fb[:, 0]], axis=1), axis=0)
+        n_cubes = len(np.unique(key))
+        check(len(pairs) == n_cubes == len(np.unique(fb[:, 0])) == n,
+              f"{path.name}: cubes map one-to-one onto property rows ({n_cubes} cubes, featureCount {n})")
+    if feature_ids:
+        allf = np.concatenate(feature_ids)
+        check(len(np.unique(allf)) == len(allf), f"FeatureID unique across the tileset ({len(allf):,} cubes)")
+        check(int(allf.min()) == 0 and int(allf.max()) == len(allf) - 1, "FeatureID covers 0..N-1 with no gaps")
+    print(f"    -> {len(tiles)} tiles, {sum(len(f) for f in feature_ids):,} features")
+
+
+def _cell_size_of(tileset: dict, file_name: str) -> float:
+    """A tile's cell size: its geometricError, or the voxel size at the leaves."""
+    if not hasattr(_cell_size_of, "cache"):
+        cache = {}
+
+        def walk(node, parent_err=None):
+            uri = node.get("content", {}).get("uri")
+            err = node["geometricError"]
+            if uri:
+                cache[uri.split("/")[-1]] = err if err else parent_err / 2
+            for c in node.get("children", []):
+                walk(c, err)
+
+        # The tileset's own geometricError stands in as the root's parent, for a single-tile tileset.
+        walk(tileset["root"], tileset["geometricError"])
+        _cell_size_of.cache = cache
+    return _cell_size_of.cache[file_name]
+
+
 def check_tree(tileset: dict) -> None:
     def walk(node, depth=0):
         yield node, depth
@@ -334,6 +554,20 @@ def check_tree(tileset: dict) -> None:
                 "child geometricError strictly less than parent",
             )
         check(node.get("refine") == "REPLACE", "refine is REPLACE")
+    # Each child's box inside its parent's (all boxes share the root frame).
+    def extent(node):
+        b = node["boundingVolume"]["box"]
+        c, h = np.array(b[0:3]), np.array([b[3], b[7], b[11]])
+        return c - h, c + h
+
+    for node, _ in nodes:
+        lo, hi = extent(node)
+        for kid in node.get("children", []):
+            klo, khi = extent(kid)
+            check(
+                bool(np.all(klo >= lo - 1e-6) and np.all(khi <= hi + 1e-6)),
+                "every child's bounding box lies inside its parent's",
+            )
     leaves = [n for n, _ in nodes if not n.get("children")]
     check(
         all(n["geometricError"] == 0 for n in leaves),
@@ -346,24 +580,37 @@ def check_tree(tileset: dict) -> None:
     print(f"    -> {len(nodes)} tiles, {len(leaves)} leaves, depth {max(d for _, d in nodes)}")
 
 
-def main(root: Path, las: Path) -> int:
-    print(f"Verifying {root}")
-    tileset = json.loads((root / "tileset.json").read_text())
+def main(root: Path, las: Path, tileset_name: str = "tileset.json") -> int:
+    print(f"Verifying {root / tileset_name}")
+    path = root / tileset_name
+    # --gzip-only leaves only tileset.json.gz.
+    raw = path.read_bytes() if path.exists() else gzip.decompress(path.with_name(path.name + ".gz").read_bytes())
+    tileset = json.loads(raw)
+    geo = load_georeference(root, tileset)
 
     print("  tree structure")
     check_tree(tileset)
+    check_root_extent(tileset, geo, las)
     print("  georeference")
-    check_georeference(tileset, las)
-    print("  glb integrity")
+    check_georeference(tileset, las, geo)
+    print("  placement")
+    check_placement(root, tileset, geo, las)
+    print("  content integrity")
     n_draco = 0
-    for glb in sorted((root / "content").glob("*.glb")):
-        gltf, binary = parse_glb(glb)
-        check_accessors(glb.name, gltf, binary)
+    has_metadata = False
+    files = tile_paths(root / "content")
+    for path in files:
+        gltf, binary = parse_glb(path)
+        has_metadata |= "EXT_structural_metadata" in gltf.get("extensionsUsed", [])
+        check_accessors(path.name, gltf, binary)
         before = len(OK) + len(FAIL)
-        check_draco(glb.name, gltf, binary)
+        check_draco(path.name, gltf, binary)
         if len(OK) + len(FAIL) > before:
             n_draco += 1
-    print(f"    -> {len(list((root / 'content').glob('*.glb')))} glb files, {n_draco} draco-encoded")
+    print(f"    -> {len(files)} tiles, {n_draco} draco-encoded")
+    if has_metadata:
+        print("  property tables")
+        check_metadata(root, tileset)
     print("  bounding volumes")
     check_bounds(root, tileset)
 
@@ -374,4 +621,4 @@ def main(root: Path, las: Path) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(Path(sys.argv[1]), Path(sys.argv[2])))
+    sys.exit(main(Path(sys.argv[1]), Path(sys.argv[2]), *sys.argv[3:4]))

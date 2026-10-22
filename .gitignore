@@ -10,13 +10,20 @@ output/
 tiles/
 tileset/
 dist/
+# Local builds, run logs, configs and bug-report repros (Vale alone is ~6,700 files).
+production/
 
 # Catch a tileset written to an unusual directory name.
 **/content/*.glb
 **/content/*.glb.gz
+**/content/*.b3dm
+**/content/*.b3dm.gz
 **/tileset.json
 **/tileset.json.gz
+**/tileset_*.json
 report.json
+specs.json
+properties.config.json
 
 # ---------------------------------------------------------------------------
 # Point clouds and other large inputs

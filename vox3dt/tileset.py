@@ -18,17 +18,25 @@ Coordinate systems, in order
    glTF's right-handed y-up convention. glTF x is east, y is up, z is *south*.
 3. **Tile space (3D Tiles)** -- the runtime rotates glTF y-up to z-up, giving
    ENU: ``(east, north, up) = (x, -z, y)``. Bounding volumes are declared here.
-4. **ECEF** -- the root tile's ``transform`` is the ENU-to-ECEF matrix at the
-   dataset origin.
+4. **ECEF** -- the root tile's ``transform`` maps tile space to ECEF. It is a
+   least-squares affine fit of *projected* grid metres to ECEF over the whole
+   site (see `grid_to_ecef_matrix`), not the ENU frame at the origin.
+
+Why a fit and not ENU: tile space holds projected (e.g. UTM) metres, and those
+are not local east/north metres. The projection's grid is rotated from true
+north by the meridian convergence and stretched by its scale factor, so an ENU
+frame at the origin is exact there and drifts with distance -- measured 5.7 m
+across Yaloch and 54 m at Vale's far corner. The fitted affine absorbs the
+rotation and scale; what remains is the Earth's curvature under one flat frame,
+about 1 mm on Yaloch and under a metre on Vale's 8 km.
 
 Only the root carries a ``transform``, so every tile's content and bounding
-volume is in dataset-local ENU metres. At a 7 km site that costs about 0.4 mm
-of float32 precision, which is irrelevant next to a 1 m voxel.
+volume is in dataset-local projected metres. At a 7 km site that costs about
+0.4 mm of float32 precision, which is irrelevant next to a 1 m voxel.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -36,8 +44,15 @@ import numpy as np
 from .voxelize import Georeference
 
 
-def enu_to_ecef_matrix(georeference: Georeference) -> list[float]:
-    """Column-major 4x4 placing dataset-local ENU metres onto the WGS84 globe.
+def grid_to_ecef_matrix(georeference: Georeference, extent: tuple[float, float, float]) -> tuple[list[float], dict]:
+    """Column-major 4x4 placing tile-space metres onto the WGS84 globe, plus its residual.
+
+    Tile space is ``(u, v, w) = (east, north, up)`` metres from the grid
+    origin in the source *projection*: ``E = ox + u, N = oy + v, H = oz + w``.
+    The matrix is the least-squares affine map from those to ECEF, fitted on a
+    9 x 9 x 3 lattice spanning ``extent`` (the grid's metres east, up, south).
+    The returned residual is measured back in the source CRS on a denser
+    17 x 17 x 3 lattice: worst horizontal and vertical error in metres.
 
     The vertical datum is assumed ellipsoidal. If the source LAS uses
     orthometric height (very common for surveyed data) the whole tileset sits
@@ -53,24 +68,29 @@ def enu_to_ecef_matrix(georeference: Georeference) -> list[float]:
             "The source LAS declares no CRS, so the tileset cannot be georeferenced. "
             "Re-run with --epsg to supply one explicitly."
         )
-    e, n, h = georeference.origin
-
-    to_geog = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4979", always_xy=True)
-    lon, lat, height = to_geog.transform(e, n, h)
+    ox, oy, oz = georeference.origin
+    width, height, depth = extent
     to_ecef = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4978", always_xy=True)
-    x0, y0, z0 = to_ecef.transform(e, n, h)
 
-    lam, phi = math.radians(lon), math.radians(lat)
-    sl, cl = math.sin(lam), math.cos(lam)
-    sp, cp = math.sin(phi), math.cos(phi)
+    def lattice(k: int) -> np.ndarray:
+        u, v, w = np.meshgrid(np.linspace(0, width, k), np.linspace(-depth, 0, k), np.linspace(0, height, 3))
+        return np.stack([u.ravel(), v.ravel(), w.ravel()], axis=1)
 
-    # Columns: east, north, up, origin.
-    return [
-        -sl, cl, 0.0, 0.0,
-        -sp * cl, -sp * sl, cp, 0.0,
-        cp * cl, cp * sl, sp, 0.0,
-        x0, y0, z0, 1.0,
-    ]
+    fit = lattice(9)
+    ecef = np.stack(to_ecef.transform(ox + fit[:, 0], oy + fit[:, 1], oz + fit[:, 2]), axis=1)
+    coef, *_ = np.linalg.lstsq(np.c_[fit, np.ones(len(fit))], ecef, rcond=None)
+    # coef rows are the images of u, v, w and the translation: the matrix's columns.
+    matrix = [*coef[0], 0.0, *coef[1], 0.0, *coef[2], 0.0, *coef[3], 1.0]
+
+    test = lattice(17)
+    placed = np.c_[test, np.ones(len(test))] @ coef
+    back = Transformer.from_crs("EPSG:4978", f"EPSG:{epsg}", always_xy=True)
+    e, n, h = back.transform(placed[:, 0], placed[:, 1], placed[:, 2])
+    residual = {
+        "max_horizontal_m": float(np.hypot(e - (ox + test[:, 0]), n - (oy + test[:, 1])).max()),
+        "max_vertical_m": float(np.abs(h - (oz + test[:, 2])).max()),
+    }
+    return [float(x) for x in matrix], residual
 
 
 def origin_lonlat(georeference: Georeference) -> tuple[float, float, float]:
@@ -94,7 +114,7 @@ class TileMeta:
     tx: int
     tz: int
     cell_size: float
-    #: Cell-index range in this level's own grid (full brick square, not a tight fit).
+    #: Cell-index range in this level's own grid, tight to the drawn cells.
     x0: int
     x1: int
     z0: int
