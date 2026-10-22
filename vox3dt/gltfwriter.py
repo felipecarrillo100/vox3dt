@@ -36,6 +36,11 @@ bytes per palette entry per tile, and colour arrives through the only channel
 that actually renders. A material is written alongside anyway, for viewers that
 do honour it.
 
+Per-cube properties use 3D Tiles 1.1's ``EXT_mesh_features`` +
+``EXT_structural_metadata``, with the feature id inside the Draco payload when
+Draco is on. LuciadRIA 2025.0 and 2026.1 both style and pick on these, with and
+without Draco, exactly as on a b3dm batch table (tested on a five-cube tile).
+
 On Draco
 --------
 ``KHR_draco_mesh_compression`` compresses *mesh primitives*, so it applies to
@@ -44,8 +49,9 @@ of volume lives in the instance buffers, which Draco does not touch. For those,
 gzip at the CDN (which this pipeline emits with ``--gzip``) or
 ``EXT_meshopt_compression`` are the relevant tools.
 
-Where Draco does apply it does well: voxel faces sit on an integer lattice, so
-position quantization is lossless at enough bits, and axis-aligned normals take
+Where Draco does apply it does well: positions quantize over each tile's own
+range (at 14 bits, <= 5 mm on a 1 m leaf tile, ~21 cm on a 128 m root cube --
+not lossless, but far below the cell size), and axis-aligned normals take
 only 6 distinct values.
 """
 
@@ -159,19 +165,24 @@ def payload_attributes(payload: bytes) -> list[dict]:
 
 
 @functools.lru_cache(maxsize=8)
-def draco_attribute_ids(with_colors: bool = True) -> dict[str, int]:
+def draco_attribute_ids(with_colors: bool = True, feature_dtype: str | None = None) -> dict[str, int]:
     """Probe DracoPy with a tiny mesh to learn how it numbers attributes.
 
     ``KHR_draco_mesh_compression`` maps glTF semantics to Draco ``unique_id``s,
     which are assigned in attribute *creation* order -- not glTF's semantic
-    order, and not stably across attribute sets. DracoPy adds POSITION **last**,
-    so with normals and colours present this returns
-    ``{COLOR_0: 0, NORMAL: 1, POSITION: 2}``.
+    order, and not stably across attribute sets or DracoPy versions. DracoPy
+    adds POSITION **last**; with normals and colours present 2.0.0 returns
+    ``{NORMAL: 0, COLOR_0: 1, POSITION: 2}`` (an earlier version returned
+    ``{COLOR_0: 0, NORMAL: 1, POSITION: 2}``).
 
     Hardcoding the intuitive ``{POSITION: 0, NORMAL: 1, COLOR_0: 2}`` pointed
     POSITION at the colour attribute and broke the LuciadRIA layer, which is
     why it is probed rather than assumed. Ids depend on which attributes exist,
     not on vertex count, so a 4-vertex probe is representative. Cached.
+
+    With ``feature_dtype`` ("uint16" or "float32") a second GENERIC attribute,
+    ``_FEATURE_ID_0``, is probed too. The two generics are told apart by
+    component count -- colour has 3, the feature id 1 -- never by order.
     """
     import DracoPy
 
@@ -185,16 +196,27 @@ def draco_attribute_ids(with_colors: bool = True) -> dict[str, int]:
                 dtype=np.float32,
             )
         }
+    if feature_dtype is not None:
+        kwargs.setdefault("generic_attributes", {})["_FEATURE_ID_0"] = (
+            np.arange(4, dtype=feature_dtype).reshape(-1, 1)
+        )
 
     payload = DracoPy.encode(points, faces=faces, quantization_bits=14, compression_level=7, **kwargs)
-    semantic_of = {_D_POSITION: "POSITION", _D_NORMAL: "NORMAL", _D_GENERIC: "COLOR_0"}
+    semantic_of = {_D_POSITION: "POSITION", _D_NORMAL: "NORMAL"}
     ids: dict[str, int] = {}
     for att in payload_attributes(payload):
-        semantic = semantic_of.get(att["attribute_type"])
+        if att["attribute_type"] == _D_GENERIC:
+            semantic = {3: "COLOR_0", 1: "_FEATURE_ID_0"}.get(att["num_components"])
+        else:
+            semantic = semantic_of.get(att["attribute_type"])
         if semantic and semantic not in ids:
             ids[semantic] = att["unique_id"]
 
-    expected = {"POSITION", "NORMAL"} | ({"COLOR_0"} if with_colors else set())
+    expected = (
+        {"POSITION", "NORMAL"}
+        | ({"COLOR_0"} if with_colors else set())
+        | ({"_FEATURE_ID_0"} if feature_dtype is not None else set())
+    )
     if set(ids) != expected:
         raise RuntimeError(
             f"Draco probe returned attributes {sorted(ids)}, expected {sorted(expected)}. "
@@ -216,8 +238,8 @@ class _Buffer:
         self.views: list[dict] = []
         self.accessors: list[dict] = []
 
-    def _view(self, data: bytes, target: int | None) -> int:
-        while len(self.blob) % 4:
+    def _view(self, data: bytes, target: int | None, align: int = 4) -> int:
+        while len(self.blob) % align:
             self.blob.append(0)
         offset = len(self.blob)
         self.blob.extend(data)
@@ -281,6 +303,11 @@ class _Buffer:
         """A bufferView with no accessor -- used for the Draco payload."""
         return self._view(data, None)
 
+    def add_property(self, values: np.ndarray) -> int:
+        """A property-table column. EXT_structural_metadata wants it 8-byte aligned."""
+        data = np.ascontiguousarray(values).astype(values.dtype.newbyteorder("<")).tobytes()
+        return self._view(data, None, align=8)
+
 
 def _material(rgb) -> dict:
     """A solid PBR material. Note LuciadRIA ignores this; see module docstring."""
@@ -296,6 +323,7 @@ def _material(rgb) -> dict:
 
 
 def _pack_glb(gltf: dict, binary: bytes) -> bytes:
+    """GLB container."""
     js = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
     js += b" " * (-len(js) % 4)
     bin_ = bytes(binary) + b"\x00" * (-len(binary) % 4)
@@ -306,6 +334,29 @@ def _pack_glb(gltf: dict, binary: bytes) -> bytes:
     if bin_:
         out += struct.pack("<I", len(bin_)) + b"BIN\x00" + bin_
     return bytes(out)
+
+
+#: Class name of the per-cube features in every tile's EXT_structural_metadata schema.
+METADATA_CLASS = "cube"
+
+
+def _structural_metadata(buf: _Buffer, n_features: int, columns: list[tuple[str, np.ndarray, str]]) -> dict:
+    """``EXT_structural_metadata`` with one property table, one row per cube.
+
+    ``columns`` are ``(name, values, componentType)``, componentType in the
+    extension's own names (``UINT8``, ``INT32``, ``FLOAT32``, ...). The schema
+    is embedded in each tile, as LuciadRIA reads it there.
+    """
+    properties, table = {}, {}
+    for name, values, component in columns:
+        if len(values) != n_features:
+            raise ValueError(f"property {name}: {len(values)} values for {n_features} features")
+        properties[name] = {"type": "SCALAR", "componentType": component}
+        table[name] = {"values": buf.add_property(values)}
+    return {
+        "schema": {"id": "vox3dt", "classes": {METADATA_CLASS: {"properties": properties}}},
+        "propertyTables": [{"class": METADATA_CLASS, "count": int(n_features), "properties": table}],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -412,11 +463,15 @@ def write_instanced(
 
 def build_faces(
     centers: np.ndarray, rgb: np.ndarray, faces: np.ndarray, cell_size: float
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Expand exposed faces into vertex arrays. ``faces`` is the (M, 6) mask."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Expand exposed faces into vertex arrays. ``faces`` is the (M, 6) mask.
+
+    The fifth array is each vertex's owning cube (row of ``centers``), so a
+    per-cube attribute such as ``_FEATURE_ID_0`` lands on every face of its cube.
+    """
     h = cell_size / 2.0
     corners = ((-1, -1), (1, -1), (1, 1), (-1, 1))
-    pos_parts, nrm_parts, col_parts, idx_parts = [], [], [], []
+    pos_parts, nrm_parts, col_parts, idx_parts, own_parts = [], [], [], [], []
     vertex_base = 0
 
     for f, (n, t, b) in enumerate(_FACES):
@@ -435,6 +490,7 @@ def build_faces(
         pos_parts.append(quad.reshape(-1, 3))
         nrm_parts.append(np.tile(n_.astype(np.float32), (count * 4, 1)))
         col_parts.append(np.repeat(rgb[selected], 4, axis=0))
+        own_parts.append(np.repeat(np.flatnonzero(selected), 4))
 
         base = vertex_base + np.arange(count, dtype=np.uint32) * 4
         idx_parts.append(
@@ -444,13 +500,15 @@ def build_faces(
 
     if not pos_parts:
         empty = np.zeros((0, 3), dtype=np.float32)
-        return empty, empty, np.zeros((0, 3), dtype=np.uint8), np.zeros(0, dtype=np.uint32)
+        return (empty, empty, np.zeros((0, 3), dtype=np.uint8), np.zeros(0, dtype=np.uint32),
+                np.zeros(0, dtype=np.int64))
 
     return (
         np.concatenate(pos_parts),
         np.concatenate(nrm_parts),
         np.concatenate(col_parts),
         np.concatenate(idx_parts),
+        np.concatenate(own_parts),
     )
 
 
@@ -462,14 +520,22 @@ def write_baked(
     draco: bool = False,
     draco_bits: int = 14,
     color_bits: int = 8,
+    properties: list[tuple[str, np.ndarray, str]] | None = None,
 ) -> tuple[bytes, dict]:
     """Face-culled triangles, optionally Draco-compressed.
 
     ``COLOR_0`` is FLOAT32 in both cases -- see the module docstring for why an
     integer colour cannot be used with Draco in LuciadRIA. At the default
     ``color_bits=8`` the values are exact.
+
+    ``properties`` -- ``(name, values, componentType)`` columns, one value per
+    cube -- make each cube a feature: a per-vertex ``_FEATURE_ID_0`` (the cube's
+    row, constant over its faces) under ``EXT_mesh_features``, pointing into an
+    ``EXT_structural_metadata`` property table. Under Draco the feature id is
+    UNSIGNED_SHORT while the tile has at most 65,536 cubes, FLOAT otherwise
+    (exact to 2**24). Uncompressed it is always FLOAT.
     """
-    position, normal, colour_rgb, indices = build_faces(centers, rgb, faces, cell_size)
+    position, normal, colour_rgb, indices, owner = build_faces(centers, rgb, faces, cell_size)
     stats = {
         "cubes": int(len(centers)),
         "vertices": int(len(position)),
@@ -480,6 +546,15 @@ def write_baked(
     if len(position) == 0:
         return b"", stats
 
+    feature = None
+    if properties is not None:
+        # Uncompressed vertex attributes must be 4-byte aligned per element
+        # (glTF 2.0 §3.6.2.4), which a tightly packed u16 is not -- so plain
+        # tiles use FLOAT, like the MapEvolution five-cubes sample.
+        feature_float = (not draco) or len(centers) - 1 > 0xFFFF
+        feature = owner.astype(np.float32 if feature_float else np.uint16)
+        stats["feature_id_type"] = "FLOAT" if feature_float else "UNSIGNED_SHORT"
+
     colour = normalize_colors(colour_rgb, color_bits)
     buf = _Buffer()
     primitive: dict = {"material": 0}
@@ -488,6 +563,9 @@ def write_baked(
     if draco:
         import DracoPy
 
+        generic = {"COLOR": colour}
+        if feature is not None:
+            generic["_FEATURE_ID_0"] = feature.reshape(-1, 1)
         payload = DracoPy.encode(
             position.astype(np.float32),
             faces=indices.reshape(-1, 3).astype(np.uint32),
@@ -499,13 +577,16 @@ def write_baked(
             # extension maps semantics by unique_id, so COLOR_0 can legally
             # point at it -- and being float, no `normalized` handling is
             # required of the viewer.
-            generic_attributes={"COLOR": colour},
+            generic_attributes=generic,
             preserve_order=False,
         )
         primitive["extensions"] = {
             "KHR_draco_mesh_compression": {
                 "bufferView": buf.add_raw(payload),
-                "attributes": dict(draco_attribute_ids(with_colors=True)),
+                "attributes": dict(draco_attribute_ids(
+                    with_colors=True,
+                    feature_dtype=None if feature is None else str(feature.dtype),
+                )),
             }
         }
         extensions.append("KHR_draco_mesh_compression")
@@ -515,14 +596,25 @@ def write_baked(
         a_nrm = buf.add_meta(normal, _FLOAT, "VEC3")
         a_col = buf.add_meta(colour, _FLOAT, "VEC3")
         a_idx = buf.add_meta(indices.astype(np.uint32), _UINT, "SCALAR")
+        if feature is not None:
+            a_fid = buf.add_meta(feature, _FLOAT if feature.dtype == np.float32 else _USHORT, "SCALAR")
     else:
         a_pos = buf.add(position, _FLOAT, "VEC3", _ARRAY_BUFFER, with_bounds=True)
         a_nrm = buf.add(normal, _FLOAT, "VEC3", _ARRAY_BUFFER)
         a_col = buf.add(colour, _FLOAT, "VEC3", _ARRAY_BUFFER)
         a_idx = buf.add(indices.astype(np.uint32), _UINT, "SCALAR", _ELEMENT_ARRAY_BUFFER)
+        if feature is not None:
+            a_fid = buf.add(feature, _FLOAT if feature.dtype == np.float32 else _USHORT, "SCALAR", _ARRAY_BUFFER)
 
     primitive["attributes"] = {"POSITION": a_pos, "NORMAL": a_nrm, "COLOR_0": a_col}
     primitive["indices"] = a_idx
+    root_extensions: dict = {}
+    if feature is not None:
+        primitive["attributes"]["_FEATURE_ID_0"] = a_fid
+        primitive.setdefault("extensions", {})["EXT_mesh_features"] = {
+            "featureIds": [{"featureCount": int(len(centers)), "attribute": 0, "propertyTable": 0}]
+        }
+        root_extensions["EXT_structural_metadata"] = _structural_metadata(buf, len(centers), properties)
 
     gltf = {
         "asset": {"version": "2.0", "generator": "vox3dt"},
@@ -535,8 +627,13 @@ def write_baked(
         "bufferViews": buf.views,
         "buffers": [{"byteLength": len(buf.blob)}],
     }
+    if root_extensions:
+        gltf["extensions"] = root_extensions
+    # The metadata extensions are optional: a viewer without them still draws the mesh.
+    used = extensions + (["EXT_mesh_features", "EXT_structural_metadata"] if feature is not None else [])
+    if used:
+        gltf["extensionsUsed"] = used
     if extensions:
-        gltf["extensionsUsed"] = extensions
         gltf["extensionsRequired"] = extensions
 
     glb = _pack_glb(gltf, buf.blob)

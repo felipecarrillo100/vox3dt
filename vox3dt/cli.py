@@ -15,8 +15,9 @@ import numpy as np
 from . import __version__
 from .gltfwriter import write_baked, write_instanced
 from .info import describe, format_text
+from .rasterprops import RasterProperty, load_config, parse_property_arg, validate_specs
 from .pyramid import pyramid_stream
-from .tileset import TileMeta, build_tree, enu_to_ecef_matrix, origin_lonlat, pyramid_depth
+from .tileset import TileMeta, build_tree, grid_to_ecef_matrix, origin_lonlat, pyramid_depth
 from .voxelize import header_epsg, read_grid_spec, stream_level0_runs
 
 DEFAULT_BRICK = 64
@@ -39,6 +40,10 @@ examples
   # Simplest useful run: Draco-compressed, gzip sidecars for a CDN.
   vox3dt -i site.las -o tiles/site --draco --gzip
 
+  # Only gzipped files on disk (tiles and tileset.json); serve them under
+  # their plain names with Content-Encoding: gzip.
+  vox3dt -i site.las -o tiles/site --draco --gzip-only
+
   # Uncompressed, for a viewer without Draco support.
   vox3dt -i site.las -o tiles/site
 
@@ -55,20 +60,29 @@ examples
   # Fast header-only inspection, no conversion (works on any file size).
   vox3dt -i site.las --info
 
+  # Per-cube properties from GeoTIFFs (EXT_structural_metadata in each glb).
+  vox3dt -i site.las -o tiles/site --draco --property Classification=landcover.tif
+  vox3dt -i site.las -o tiles/site --draco --properties props.json
+
   # LAS with no declared CRS: assume one, or write a non-georeferenced tileset.
   vox3dt -i site.las -o tiles/site --epsg 32616
   vox3dt -i site.las -o tiles/site               # no --epsg -> local metres only
 
 output
 ------
-  <output>/tileset.json        the tileset, with the ENU->ECEF root transform
+  <output>/tileset.json        the tileset, with the fitted grid->ECEF root transform
                                 (omitted if the tileset is non-georeferenced)
-  <output>/content/*.glb       one binary glTF per tile
+  <output>/content/*.glb       one binary glTF per tile; with --property, each
+                                cube is a feature with its own property row
+  <output>/specs.json          developer reference: georeference, grid,
+                                encoding, FeatureID, and per property its
+                                source and the GeoTIFF colour of each class
   <output>/report.json         per-level tile/cube/byte counts for this run
   <output>/log/conversion.log  a minimal, milestone-only log of this run
   <output>/temp/               working files, deleted when the run finishes
                                 (unless --keep-temp)
-  *.gz alongside each file when --gzip is given
+  *.gz alongside each file when --gzip is given; with --gzip-only the tiles
+  and tileset.json exist only as .gz (specs.json, report.json stay plain)
 
 verifying
 ---------
@@ -149,13 +163,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     encoding.add_argument(
         "--draco-bits", type=int, default=14, metavar="N",
-        help="Draco position quantization bits (default: 14). Voxels sit on an "
-             "integer lattice, so this is lossless well below 14 for most tiles",
+        help="Draco position quantization bits (default: 14). The step is about "
+             "the tile's range / 2^bits: <= 5 mm on 1 m leaf tiles at 14 bits, "
+             "more on coarse tiles -- small, but not lossless",
     )
     encoding.add_argument(
         "--palette-bits", type=int, default=2, metavar="N",
         help="Instanced mode only: bits per channel for the colour palette "
              "(default: 2, up to 64 entries). One draw call per entry per tile",
+    )
+
+    props = parser.add_argument_group("properties")
+    props.add_argument(
+        "--property", action="append", default=[], metavar="NAME=PATH",
+        help="Sample a GeoTIFF into a per-cube property NAME "
+             "(EXT_structural_metadata). Repeatable. Adds FeatureID, unique per cube. "
+             "Kind (categorical if the raster has a colour table, else "
+             "continuous) and type are detected from the raster",
+    )
+    props.add_argument(
+        "--properties", type=Path, default=None, metavar="JSON",
+        help="Config file listing properties: {\"properties\": [{\"name\", "
+             "\"file\", \"band\", \"kind\", \"labels\", \"colors\"}, ...]}. "
+             "Relative paths resolve against the config's folder",
     )
 
     pyramid = parser.add_argument_group("pyramid")
@@ -179,6 +209,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--gzip", action="store_true",
         help="Also write .gz beside each file, for CDN upload with "
              "Content-Encoding: gzip",
+    )
+    output.add_argument(
+        "--gzip-only", action="store_true",
+        help="Like --gzip, but write the tiles and tileset.json only as .gz, "
+             "with no uncompressed copy. The server must answer requests for "
+             "tileset.json and .glb with the .gz and Content-Encoding: gzip",
     )
     output.add_argument(
         "--chunk-points", type=int, default=5_000_000, metavar="N",
@@ -216,11 +252,25 @@ def parse_args(argv=None) -> argparse.Namespace:
         parser.error("--levels must be at least 1")
     if args.memory_budget < 1:
         parser.error("--memory-budget must be at least 1 (MB)")
+    if args.gzip_only:
+        args.gzip = True
     if args.draco and args.mode == "instanced":
         parser.error(
             "--draco has no effect in instanced mode (the mesh is one cube; the "
             "volume is in instance buffers). Use --gzip instead, or --mode baked."
         )
+    args.property_specs = []
+    try:
+        if args.properties is not None:
+            if not args.properties.exists():
+                parser.error(f"--properties file not found: {args.properties}")
+            args.property_specs += load_config(args.properties)
+        args.property_specs += [parse_property_arg(t) for t in args.property]
+        validate_specs(args.property_specs)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.property_specs and args.mode == "instanced":
+        parser.error("--property/--properties need --mode baked (instanced would need EXT_instance_features)")
     if args.epsg is not None:
         try:
             from pyproj import CRS
@@ -231,9 +281,11 @@ def parse_args(argv=None) -> argparse.Namespace:
     return args
 
 
-def _write(path: Path, data: bytes, gzip_out: bool) -> int:
+def _write(path: Path, data: bytes, gzip_out: bool, raw: bool = True) -> int:
+    """Write ``data`` and/or its ``.gz`` twin. Returns the uncompressed size."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
+    if raw:
+        path.write_bytes(data)
     if gzip_out:
         path.with_suffix(path.suffix + ".gz").write_bytes(gzip.compress(data, compresslevel=9))
     return len(data)
@@ -281,13 +333,32 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
     output: Path = args.output
     budget_bytes = args.memory_budget * 1024 * 1024
 
-    if args.epsg is not None:
-        existing = header_epsg(args.input)
-        if existing is not None:
-            say(f"Note: LAS already declares EPSG:{existing}; ignoring --epsg {args.epsg}.")
+    declared_epsg = header_epsg(args.input)
+    if args.epsg is not None and declared_epsg is not None:
+        say(f"Note: LAS already declares EPSG:{declared_epsg}; ignoring --epsg {args.epsg}.")
 
     spec = read_grid_spec(args.input, args.voxel_size, epsg_override=args.epsg)
     geo = spec.georeference
+    epsg_assumed = declared_epsg is None and geo.epsg is not None
+
+    # Rasters are opened and checked before any point is read, so a bad
+    # property config fails in seconds rather than an hour into a large run.
+    rasters: list[RasterProperty] = []
+    if args.property_specs:
+        if geo.epsg is None:
+            raise ValueError("--property needs a georeferenced LAS: a declared CRS or --epsg")
+        say("Properties:")
+        east_range = (float(spec.g_min[0]), float(spec.g_max[0]))
+        north_range = (float(spec.g_min[2]), float(spec.g_max[2]))
+        for prop_spec in args.property_specs:
+            raster = RasterProperty(prop_spec, geo.epsg)
+            coverage = raster.coverage(east_range, north_range)
+            say(raster.summary_line(coverage))
+            if coverage <= 0:
+                raise ValueError(f"{prop_spec.name}: raster does not overlap the LAS bounds")
+            rasters.append(raster)
+    next_feature_id = [0]
+    float_feature_tiles: list[str] = []
 
     depth = (args.levels - 1) if args.levels else pyramid_depth(spec.dims, args.brick)
     levels = depth + 1
@@ -303,24 +374,46 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
         faces_visible = block.faces[block.surface]
         centers = (idx.astype(np.float64) + 0.5) * block.cell_size
 
+        n_cubes = len(idx)
+        tlevel = depth - block.depth_from_finest
+        columns = None
+        if rasters:
+            first = next_feature_id[0]
+            if first + n_cubes > 2**31 - 1:
+                raise ValueError("more than 2**31-1 cubes: FeatureID no longer fits int32")
+            ox, oy, _oz = geo.origin
+            east = ox + centers[:, 0]
+            north = oy - centers[:, 2]
+            columns = [("FeatureID", np.arange(first, first + n_cubes, dtype=np.int32), "INT32")]
+            for raster in rasters:
+                columns.append(
+                    (raster.name, raster.sample(east, north, block.cell_size, tlevel), raster.component_type)
+                )
         if args.mode == "instanced":
             glb, stats = write_instanced(centers, rgb, block.cell_size, args.palette_bits)
         else:
             glb, stats = write_baked(
                 centers, rgb, faces_visible, block.cell_size,
                 draco=args.draco, draco_bits=args.draco_bits, color_bits=args.color_bits,
+                properties=columns,
             )
         if not glb:
             return
-
-        tlevel = depth - block.depth_from_finest
+        if rasters:
+            next_feature_id[0] += n_cubes
+        # Tight bounds, in whole cells of this level: every drawn cube lies
+        # fully inside, and a parent's box contains its children's because a
+        # coarse cell covers the finer cells it was built from.
         meta = TileMeta(
             level=tlevel, tx=block.tx, tz=block.tz, cell_size=block.cell_size,
-            x0=block.tx * args.brick, x1=(block.tx + 1) * args.brick,
-            z0=block.tz * args.brick, z1=(block.tz + 1) * args.brick,
+            x0=int(idx[:, 0].min()), x1=int(idx[:, 0].max()) + 1,
+            z0=int(idx[:, 2].min()), z1=int(idx[:, 2].max()) + 1,
             y_min=int(idx[:, 1].min()), y_max=int(idx[:, 1].max()),
         )
-        nbytes = _write(output / "content" / f"{meta.key}.glb", glb, args.gzip)
+
+        if stats.get("feature_id_type") == "FLOAT":
+            float_feature_tiles.append(meta.key)
+        nbytes = _write(output / "content" / f"{meta.key}.glb", glb, args.gzip, raw=not args.gzip_only)
         tiles_by_level.setdefault(tlevel, []).append(meta)
 
         counts = per_level_counts.setdefault(tlevel, {"tiles": 0, "cubes": 0, "triangles": 0, "bytes": 0})
@@ -344,16 +437,21 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
     if non_georeferenced:
         lon = lat = height = None
         transform = None
+        placement_residual = None
         say(
             "\nNo CRS declared and no --epsg given -- writing a non-georeferenced "
             "tileset (local metres, no root transform)."
         )
     else:
         lon, lat, height = origin_lonlat(geo)
-        transform = enu_to_ecef_matrix(geo)
+        extent = tuple(float(d) * args.voxel_size for d in spec.dims)
+        transform, placement_residual = grid_to_ecef_matrix(geo, extent)
         say(
             f"\nGeoreference: EPSG:{geo.epsg} ({geo.crs_name})"
             f"\n  grid origin -> lon {lon:.6f}, lat {lat:.6f}, h {height:.2f} m"
+            f"\n  root transform: least-squares fit, worst placement error "
+            f"{placement_residual['max_horizontal_m']:.3f} m horizontal, "
+            f"{placement_residual['max_vertical_m']:.3f} m vertical"
         )
 
     per_level, totals = [], {"tiles": 0, "cubes": 0, "triangles": 0, "bytes": 0}
@@ -374,25 +472,69 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
         root["transform"] = transform
 
     voxel_count = pyramid_stats[0]["cells"] if pyramid_stats else 0
-    tileset = {
-        "asset": {"version": "1.1", "tilesetVersion": f"vox3dt-{__version__}", "gltfUpAxis": "Y"},
-        "geometricError": args.voxel_size * (2 ** (depth + 1)),
-        "root": root,
-        "extras": {
-            "generator": f"vox3dt {__version__}",
-            "source": args.input.name,
-            "georeference": geo.as_dict(),
-            "grid_dims": list(spec.dims),
+    # tileset.json holds only what the 3D Tiles spec defines; everything a
+    # developer might want to look up goes to specs.json instead.
+    tileset: dict = {"asset": {"version": "1.1", "tilesetVersion": f"vox3dt-{__version__}", "gltfUpAxis": "Y"}}
+    if rasters:
+        # Value ranges, which LuciadRIA needs before it will style on a property.
+        tileset["properties"] = {
+            r.name: {"minimum": r.vmin, "maximum": r.vmax} for r in rasters if r.vmin is not None
+        }
+    tileset["geometricError"] = args.voxel_size * (2 ** (depth + 1))
+    tileset["root"] = root
+    _write(output / "tileset.json", json.dumps(tileset, indent=2).encode(), args.gzip, raw=not args.gzip_only)
+
+    georef = geo.as_dict()
+    georef["epsg_assumed"] = epsg_assumed
+    georef["origin_lonlat"] = [lon, lat, height] if lon is not None else None
+    georef["placement"] = (
+        "root.transform is a least-squares affine fit mapping tile-space projected metres "
+        "(E = ox + u, N = oy + v, H = oz + w) to ECEF (EPSG:4978), absorbing the projection's "
+        "grid convergence and scale; glTF content is y-up: (u, v, w) = (x, -z, y)"
+        if transform is not None else "non-georeferenced: local metres, no root transform"
+    )
+    georef["placement_residual"] = placement_residual
+    specs = {
+        "generator": f"vox3dt {__version__}",
+        "source": {"file": args.input.name, "points": spec.n_points},
+        "georeference": georef,
+        "grid": {
+            "voxel_size": args.voxel_size,
+            "dims": list(spec.dims),
+            "brick": args.brick,
             "voxel_count": voxel_count,
-            "encoding": {
-                "mode": args.mode,
-                "draco": bool(args.draco),
-                "color_bits": args.color_bits,
-                "exact_color": args.color_bits >= 8,
-            },
+            "levels": [
+                {"level": lvl, "cell_size": args.voxel_size * (2 ** (depth - lvl))} for lvl in range(levels)
+            ],
+        },
+        "encoding": {
+            "content": "glb",
+            "mode": args.mode,
+            "draco": bool(args.draco),
+            "color": "COLOR_0 FLOAT32 VEC3",
+            "color_bits": args.color_bits,
+            "exact_color": args.color_bits >= 8,
         },
     }
-    _write(output / "tileset.json", json.dumps(tileset, indent=2).encode(), args.gzip)
+    if rasters:
+        specs["encoding"]["feature_id"] = (
+            "_FEATURE_ID_0 per vertex (EXT_mesh_features), constant over each cube; row index into "
+            "the tile's EXT_structural_metadata property table (class 'cube'). "
+            + ("UNSIGNED_SHORT inside Draco, FLOAT in tiles with more than 65536 cubes"
+               if args.draco else "FLOAT (uncompressed vertex attributes must be 4-byte aligned)")
+        )
+        specs["feature_id"] = {
+            "property": "FeatureID",
+            "component_type": "INT32",
+            "scope": "unique per cube across the whole tileset (a cube at each level is its own feature)",
+            "min": 0 if next_feature_id[0] else None,
+            "max": next_feature_id[0] - 1 if next_feature_id[0] else None,
+        }
+        specs["properties"] = {r.name: r.spec_entry() for r in rasters}
+    (output / "specs.json").write_text(json.dumps(specs, indent=2))
+    if args.properties is not None:
+        # The config that built this tileset, kept beside it.
+        shutil.copyfile(args.properties, output / "properties.config.json")
 
     report = {
         "generator": f"vox3dt {__version__}",
@@ -400,6 +542,8 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
         "output": str(output),
         "mode": args.mode,
         "draco": bool(args.draco),
+        # "only": tiles exist solely as .glb.gz; true: .gz beside each raw file.
+        "gzip": "only" if args.gzip_only else bool(args.gzip),
         "color_bits": args.color_bits,
         "exact_color": args.color_bits >= 8,
         "voxel_size": args.voxel_size,
@@ -410,16 +554,21 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
         "origin_lonlat": [lon, lat, height] if lon is not None else None,
         "grid_dims": list(spec.dims),
         "voxel_count": voxel_count,
+        "content": "glb",
         "totals": totals,
         "per_level": per_level,
         "seconds": round(time.perf_counter() - started, 2),
     }
+    if rasters:
+        report["feature_ids"] = next_feature_id[0]
+        report["feature_id_float_tiles"] = float_feature_tiles
+        report["properties"] = {r.name: r.report_entry() for r in rasters}
     (output / "report.json").write_text(json.dumps(report, indent=2))
 
     say(
         f"\n{totals['tiles']:,} tiles, {totals['bytes'] / 1e6:.2f} MB"
-        f"{' (+ .gz)' if args.gzip else ''} in {report['seconds']:.1f}s"
-        f"\n  -> {output / 'tileset.json'}"
+        f"{' (.gz only)' if args.gzip_only else ' (+ .gz)' if args.gzip else ''} in {report['seconds']:.1f}s"
+        f"\n  -> {output / ('tileset.json.gz' if args.gzip_only else 'tileset.json')}"
         f"\n  verify with: python verify.py {output} {args.input}"
     )
     return report
