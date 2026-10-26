@@ -1,0 +1,19 @@
+# Exact versions tests/golden/ was generated with (Python 3.14.7, Darwin arm64).
+#   pip install -r requirements-lock.txt && pip install -e ".[test]"
+# A golden mismatch right after changing any of these is the upgrade, not the code.
+affine==3.0.1
+attrs==26.1.0
+certifi==2026.7.22
+click==8.5.0
+DracoPy==2.0.0
+iniconfig==2.3.1
+laspy==2.7.0
+lazrs==0.8.2
+numpy==2.5.3
+packaging==26.3
+pluggy==1.7.0
+Pygments==2.21.0
+pyparsing==3.3.3
+pyproj==3.8.0
+pytest==9.1.1
+rasterio==1.5.2

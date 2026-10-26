@@ -459,6 +459,44 @@ mapping error: `DracoPy.decode` resolves attributes by type, so wrong ids and
 mismatched accessors both round-trip perfectly. 495 checks once passed on a
 tileset that could not render.
 
+## Tests
+
+```bash
+pip install -e ".[test]"
+pytest                    # about 40 s
+```
+
+The suite builds a synthetic site at run time (`tests/synth.py`: a 300 x 280 m
+LAS with terrain, a lake, a road, a building and 55 multi-return trees, plus a
+categorical and a continuous GeoTIFF) and runs `vox3dt` on it in 13
+configurations: plain, Draco, `--gzip`, `--gzip-only`, properties with and
+without Draco, a tile past 65,536 cubes, a 1 MB memory budget that forces the
+external sort, instanced, 5-bit colour, no CRS and `--epsg`. No real data is
+involved, and nothing is downloaded.
+
+Each run must match `tests/golden/` exactly: every tile's bytes (as a
+SHA-256), and `tileset.json`, `specs.json` and `report.json` apart from run
+time and paths. On top of that every run passes `verify.py`, the georeference
+is checked against known answers (the grid corners land on the LAS bounds,
+not a voxel south), runs that must agree do (gzip, memory budget and CRS
+handling never change a tile), and the command-line errors stay clear.
+
+When an output change is intended, regenerate and review the diff:
+
+```bash
+pytest --update-golden
+git diff tests/golden/
+```
+
+`requirements-lock.txt` records the exact versions the golden files were made
+with. A golden mismatch right after upgrading one of them is the upgrade, not
+the code.
+
+`tools/regression_check.py` is the manual double-check on a large real
+dataset: record a baseline with one version of the code, rebuild with another,
+compare every tile. It never runs under pytest, and its output and baseline
+must stay outside git (`production/` is ignored). See its docstring for usage.
+
 ## Troubleshooting
 
 ### `ModuleNotFoundError: No module named 'numpy'`

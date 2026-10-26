@@ -1,0 +1,435 @@
+{
+ "files": [
+  "content/L0_0_0.glb",
+  "content/L1_0_0.glb",
+  "content/L1_0_1.glb",
+  "content/L1_1_0.glb",
+  "content/L1_1_1.glb",
+  "properties.config.json",
+  "report.json",
+  "specs.json",
+  "tileset.json"
+ ],
+ "report": {
+  "brick": 260,
+  "color_bits": 8,
+  "content": "glb",
+  "crs_name": "SIRGAS 2000 / UTM zone 23S",
+  "draco": true,
+  "epsg": 31983,
+  "exact_color": true,
+  "feature_id_float_tiles": [
+   "L1_0_0"
+  ],
+  "feature_ids": 121175,
+  "generator": "vox3dt 0.1.0",
+  "grid_dims": [
+   300,
+   38,
+   280
+  ],
+  "gzip": false,
+  "levels": 2,
+  "mode": "baked",
+  "origin_lonlat": [
+   -44.999999027027144,
+   -22.604326410510023,
+   762.5500000000001
+  ],
+  "per_level": [
+   {
+    "bytes": 4268888,
+    "cell_size": 2.0,
+    "cubes": 27564,
+    "level": 0,
+    "tiles": 1,
+    "triangles": 125960
+   },
+   {
+    "bytes": 18970288,
+    "cell_size": 1.0,
+    "cubes": 93611,
+    "level": 1,
+    "tiles": 4,
+    "triangles": 506740
+   }
+  ],
+  "properties": {
+   "Classification": {
+    "cubes_on_filled_pixels": 7710,
+    "cubes_outside_raster": 7201,
+    "cubes_per_class_per_level": {
+     "0": {
+      "0": 526,
+      "1": 439,
+      "3": 5043,
+      "4": 21556
+     },
+     "1": {
+      "0": 1976,
+      "1": 1724,
+      "3": 12887,
+      "4": 77024
+     }
+    }
+   },
+   "Elevation": {
+    "cubes_on_filled_pixels": 594,
+    "cubes_outside_raster": 0,
+    "cubes_per_class_per_level": null
+   }
+  },
+  "totals": {
+   "bytes": 23239176,
+   "cubes": 121175,
+   "tiles": 5,
+   "triangles": 632700
+  },
+  "voxel_count": 93614,
+  "voxel_size": 1.0
+ },
+ "specs": {
+  "encoding": {
+   "color": "COLOR_0 FLOAT32 VEC3",
+   "color_bits": 8,
+   "content": "glb",
+   "draco": true,
+   "exact_color": true,
+   "feature_id": "_FEATURE_ID_0 per vertex (EXT_mesh_features), constant over each cube; row index into the tile's EXT_structural_metadata property table (class 'cube'). UNSIGNED_SHORT inside Draco, FLOAT in tiles with more than 65536 cubes",
+   "mode": "baked"
+  },
+  "feature_id": {
+   "component_type": "INT32",
+   "max": 121174,
+   "min": 0,
+   "property": "FeatureID",
+   "scope": "unique per cube across the whole tileset (a cube at each level is its own feature)"
+  },
+  "generator": "vox3dt 0.1.0",
+  "georeference": {
+   "axis_mapping": {
+    "grid_x": "easting",
+    "grid_y": "elevation",
+    "grid_z": "northing",
+    "grid_z_sign": -1
+   },
+   "epsg_assumed": false,
+   "grid_origin_world": {
+    "easting": 500000.1,
+    "height": 762.5500000000001,
+    "northing": 7500280.1
+   },
+   "horizontal_epsg": 31983,
+   "horizontal_name": "SIRGAS 2000 / UTM zone 23S",
+   "origin_lonlat": [
+    -44.999999027027144,
+    -22.604326410510023,
+    762.5500000000001
+   ],
+   "placement": "root.transform is a least-squares affine fit mapping tile-space projected metres (E = ox + u, N = oy + v, H = oz + w) to ECEF (EPSG:4978), absorbing the projection's grid convergence and scale; glTF content is y-up: (u, v, w) = (x, -z, y)",
+   "placement_residual": {
+    "max_horizontal_m": 0.0006125783517951402,
+    "max_vertical_m": 0.0019315497949037308
+   },
+   "transform_formula": "E = ox + gx*vs ; N = oy - gz*vs ; H = oz + gy*vs",
+   "units": "meters",
+   "voxel_size": 1.0
+  },
+  "grid": {
+   "brick": 260,
+   "dims": [
+    300,
+    38,
+    280
+   ],
+   "levels": [
+    {
+     "cell_size": 2.0,
+     "level": 0
+    },
+    {
+     "cell_size": 1.0,
+     "level": 1
+    }
+   ],
+   "voxel_count": 93614,
+   "voxel_size": 1.0
+  },
+  "properties": {
+   "Classification": {
+    "aggregation": "cubes narrower than a pixel (2 x 2 raster units) read the pixel under their centre; larger cubes take the majority of the valid pixels whose centres lie in their footprint (ties: lowest code)",
+    "classes": {
+     "0": {
+      "color_source": "geotiff colour table",
+      "cubes": 2502,
+      "hex": "#005ac8",
+      "label": "Water",
+      "rgb": [
+       0,
+       90,
+       200
+      ]
+     },
+     "1": {
+      "color_source": "geotiff colour table",
+      "cubes": 2163,
+      "hex": "#dc3232",
+      "label": "Building",
+      "rgb": [
+       220,
+       50,
+       50
+      ]
+     },
+     "3": {
+      "color_source": "geotiff colour table",
+      "cubes": 17930,
+      "hex": "#147828",
+      "label": "Forest",
+      "rgb": [
+       20,
+       120,
+       40
+      ]
+     },
+     "4": {
+      "color_source": "config",
+      "cubes": 98580,
+      "hex": "#88cc44",
+      "label": "Grass",
+      "rgb": [
+       136,
+       204,
+       68
+      ]
+     }
+    },
+    "component_type": "UINT8",
+    "kind": "categorical",
+    "nodata_fill": {
+     "cubes_on_filled_pixels": 7710,
+     "cubes_outside_raster": 7201,
+     "max_distance_px": 5,
+     "policy": "nearest valid pixel (8-neighbour growth, distance in pixels)"
+    },
+    "range": {
+     "max": 4,
+     "mean": 3.7158902413864245,
+     "min": 0
+    },
+    "source": {
+     "band": 1,
+     "crs": "EPSG:31983",
+     "dtype": "uint8",
+     "file": "landcover.tif",
+     "nodata": 255.0,
+     "pixel_size": [
+      2.0,
+      2.0
+     ],
+     "size": [
+      145,
+      150
+     ],
+     "valid_fraction": 0.9954
+    }
+   },
+   "Elevation": {
+    "aggregation": "cubes narrower than a pixel (5e-05 x 5e-05 raster units) read the pixel under their centre; larger cubes take the mean of the valid pixels whose centres lie in their footprint (ties: lowest code)",
+    "component_type": "FLOAT32",
+    "kind": "continuous",
+    "nodata_fill": {
+     "cubes_on_filled_pixels": 594,
+     "cubes_outside_raster": 0,
+     "max_distance_px": 2,
+     "policy": "nearest valid pixel (8-neighbour growth, distance in pixels)"
+    },
+    "range": {
+     "max": 144.5,
+     "mean": 123.76300004131552,
+     "min": 102.75
+    },
+    "source": {
+     "band": 1,
+     "crs": "EPSG:4326",
+     "dtype": "float32",
+     "file": "elevation.tif",
+     "nodata": -9999.0,
+     "pixel_size": [
+      5e-05,
+      5e-05
+     ],
+     "size": [
+      67,
+      58
+     ],
+     "valid_fraction": 0.9959
+    }
+   }
+  },
+  "source": {
+   "file": "site.las",
+   "points": 94117
+  }
+ },
+ "tiles": {
+  "content/L0_0_0.glb": "55abb499c528f05ec8581ad56b3f2310ed97d375fc41cec9dc2598a03a710b72",
+  "content/L1_0_0.glb": "a22bf9ccb9a4b6f2e52c50b304c1a3a25cae4f4e42b8bd9e49158f126ea2475a",
+  "content/L1_0_1.glb": "b35f435d40eb0579f967bf560f246a18a353a71139604a8a934df62ce7078078",
+  "content/L1_1_0.glb": "c9def4176d6e694e844039c59824e3bcc286ea1d552f782c89023fddf1a88f37",
+  "content/L1_1_1.glb": "4252e01bbd6385b6054574bcba302f70ea08e000700d52b3372342d5eac2e573"
+ },
+ "tileset": {
+  "asset": {
+   "gltfUpAxis": "Y",
+   "tilesetVersion": "vox3dt-0.1.0",
+   "version": "1.1"
+  },
+  "geometricError": 4.0,
+  "properties": {
+   "Classification": {
+    "maximum": 4,
+    "minimum": 0
+   },
+   "Elevation": {
+    "maximum": 144.5,
+    "minimum": 102.75
+   }
+  },
+  "root": {
+   "boundingVolume": {
+    "box": [
+     150.0,
+     -140.0,
+     19.0,
+     150.0,
+     0.0,
+     0.0,
+     0.0,
+     140.0,
+     0.0,
+     0.0,
+     0.0,
+     19.0
+    ]
+   },
+   "children": [
+    {
+     "boundingVolume": {
+      "box": [
+       130.0,
+       -130.0,
+       19.0,
+       130.0,
+       0.0,
+       0.0,
+       0.0,
+       130.0,
+       0.0,
+       0.0,
+       0.0,
+       19.0
+      ]
+     },
+     "content": {
+      "uri": "content/L1_0_0.glb"
+     },
+     "geometricError": 0.0,
+     "refine": "REPLACE"
+    },
+    {
+     "boundingVolume": {
+      "box": [
+       130.0,
+       -270.0,
+       17.0,
+       130.0,
+       0.0,
+       0.0,
+       0.0,
+       10.0,
+       0.0,
+       0.0,
+       0.0,
+       16.0
+      ]
+     },
+     "content": {
+      "uri": "content/L1_0_1.glb"
+     },
+     "geometricError": 0.0,
+     "refine": "REPLACE"
+    },
+    {
+     "boundingVolume": {
+      "box": [
+       280.0,
+       -130.0,
+       25.0,
+       20.0,
+       0.0,
+       0.0,
+       0.0,
+       130.0,
+       0.0,
+       0.0,
+       0.0,
+       11.0
+      ]
+     },
+     "content": {
+      "uri": "content/L1_1_0.glb"
+     },
+     "geometricError": 0.0,
+     "refine": "REPLACE"
+    },
+    {
+     "boundingVolume": {
+      "box": [
+       280.0,
+       -270.0,
+       23.5,
+       20.0,
+       0.0,
+       0.0,
+       0.0,
+       10.0,
+       0.0,
+       0.0,
+       0.0,
+       7.5
+      ]
+     },
+     "content": {
+      "uri": "content/L1_1_1.glb"
+     },
+     "geometricError": 0.0,
+     "refine": "REPLACE"
+    }
+   ],
+   "content": {
+    "uri": "content/L0_0_0.glb"
+   },
+   "geometricError": 2.0,
+   "refine": "REPLACE",
+   "transform": [
+    0.7074610058226277,
+    0.7074917427075934,
+    9.049598304880863e-06,
+    0.0,
+    0.2719437881189484,
+    -0.2719437881137253,
+    0.9236558889870367,
+    0.0,
+    0.6527983156953437,
+    -0.6527650375038301,
+    -0.3843854067315589,
+    0.0,
+    4166127.5586397564,
+    -4166127.4177767057,
+    -2436619.5121780816,
+    1.0
+   ]
+  }
+ }
+}

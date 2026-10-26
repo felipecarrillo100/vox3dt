@@ -1,0 +1,1385 @@
+{
+ "files": [
+  "content/L0_0_0.glb",
+  "content/L1_0_0.glb",
+  "content/L1_0_1.glb",
+  "content/L1_1_0.glb",
+  "content/L1_1_1.glb",
+  "content/L2_0_0.glb",
+  "content/L2_0_1.glb",
+  "content/L2_0_2.glb",
+  "content/L2_1_0.glb",
+  "content/L2_1_1.glb",
+  "content/L2_1_2.glb",
+  "content/L2_2_0.glb",
+  "content/L2_2_1.glb",
+  "content/L2_2_2.glb",
+  "content/L3_0_0.glb",
+  "content/L3_0_1.glb",
+  "content/L3_0_2.glb",
+  "content/L3_0_3.glb",
+  "content/L3_0_4.glb",
+  "content/L3_1_0.glb",
+  "content/L3_1_1.glb",
+  "content/L3_1_2.glb",
+  "content/L3_1_3.glb",
+  "content/L3_1_4.glb",
+  "content/L3_2_0.glb",
+  "content/L3_2_1.glb",
+  "content/L3_2_2.glb",
+  "content/L3_2_3.glb",
+  "content/L3_2_4.glb",
+  "content/L3_3_0.glb",
+  "content/L3_3_1.glb",
+  "content/L3_3_2.glb",
+  "content/L3_3_3.glb",
+  "content/L3_3_4.glb",
+  "content/L3_4_0.glb",
+  "content/L3_4_1.glb",
+  "content/L3_4_2.glb",
+  "content/L3_4_3.glb",
+  "content/L3_4_4.glb",
+  "properties.config.json",
+  "report.json",
+  "specs.json",
+  "tileset.json"
+ ],
+ "report": {
+  "brick": 64,
+  "color_bits": 8,
+  "content": "glb",
+  "crs_name": "SIRGAS 2000 / UTM zone 23S",
+  "draco": false,
+  "epsg": 31983,
+  "exact_color": true,
+  "feature_id_float_tiles": [
+   "L3_0_0",
+   "L3_0_1",
+   "L3_0_2",
+   "L3_0_3",
+   "L3_0_4",
+   "L3_1_0",
+   "L3_1_1",
+   "L3_1_2",
+   "L3_1_3",
+   "L3_1_4",
+   "L3_2_0",
+   "L3_2_1",
+   "L3_2_2",
+   "L3_2_3",
+   "L3_2_4",
+   "L3_3_0",
+   "L3_3_1",
+   "L3_3_2",
+   "L3_3_3",
+   "L3_3_4",
+   "L3_4_0",
+   "L3_4_1",
+   "L3_4_2",
+   "L3_4_3",
+   "L3_4_4",
+   "L2_0_0",
+   "L2_0_1",
+   "L2_0_2",
+   "L2_1_0",
+   "L2_1_1",
+   "L2_1_2",
+   "L2_2_0",
+   "L2_2_1",
+   "L2_2_2",
+   "L1_0_0",
+   "L1_0_1",
+   "L1_1_0",
+   "L1_1_1",
+   "L0_0_0"
+  ],
+  "feature_ids": 130410,
+  "generator": "vox3dt 0.1.0",
+  "grid_dims": [
+   300,
+   38,
+   280
+  ],
+  "gzip": false,
+  "levels": 4,
+  "mode": "baked",
+  "origin_lonlat": [
+   -44.999999027027144,
+   -22.604326410510023,
+   762.5500000000001
+  ],
+  "per_level": [
+   {
+    "bytes": 776580,
+    "cell_size": 8.0,
+    "cubes": 1924,
+    "level": 0,
+    "tiles": 1,
+    "triangles": 8232
+   },
+   {
+    "bytes": 2976600,
+    "cell_size": 4.0,
+    "cubes": 7311,
+    "level": 1,
+    "tiles": 4,
+    "triangles": 31556
+   },
+   {
+    "bytes": 11853736,
+    "cell_size": 2.0,
+    "cubes": 27564,
+    "level": 2,
+    "tiles": 9,
+    "triangles": 125960
+   },
+   {
+    "bytes": 47510828,
+    "cell_size": 1.0,
+    "cubes": 93611,
+    "level": 3,
+    "tiles": 25,
+    "triangles": 506740
+   }
+  ],
+  "properties": {
+   "Classification": {
+    "cubes_on_filled_pixels": 8292,
+    "cubes_outside_raster": 7749,
+    "cubes_per_class_per_level": {
+     "0": {
+      "0": 43,
+      "1": 14,
+      "3": 177,
+      "4": 1690
+     },
+     "1": {
+      "0": 159,
+      "1": 126,
+      "3": 1268,
+      "4": 5758
+     },
+     "2": {
+      "0": 526,
+      "1": 439,
+      "3": 5043,
+      "4": 21556
+     },
+     "3": {
+      "0": 1976,
+      "1": 1724,
+      "3": 12887,
+      "4": 77024
+     }
+    }
+   },
+   "Elevation": {
+    "cubes_on_filled_pixels": 635,
+    "cubes_outside_raster": 0,
+    "cubes_per_class_per_level": null
+   }
+  },
+  "totals": {
+   "bytes": 63117744,
+   "cubes": 130410,
+   "tiles": 39,
+   "triangles": 672488
+  },
+  "voxel_count": 93614,
+  "voxel_size": 1.0
+ },
+ "specs": {
+  "encoding": {
+   "color": "COLOR_0 FLOAT32 VEC3",
+   "color_bits": 8,
+   "content": "glb",
+   "draco": false,
+   "exact_color": true,
+   "feature_id": "_FEATURE_ID_0 per vertex (EXT_mesh_features), constant over each cube; row index into the tile's EXT_structural_metadata property table (class 'cube'). FLOAT (uncompressed vertex attributes must be 4-byte aligned)",
+   "mode": "baked"
+  },
+  "feature_id": {
+   "component_type": "INT32",
+   "max": 130409,
+   "min": 0,
+   "property": "FeatureID",
+   "scope": "unique per cube across the whole tileset (a cube at each level is its own feature)"
+  },
+  "generator": "vox3dt 0.1.0",
+  "georeference": {
+   "axis_mapping": {
+    "grid_x": "easting",
+    "grid_y": "elevation",
+    "grid_z": "northing",
+    "grid_z_sign": -1
+   },
+   "epsg_assumed": false,
+   "grid_origin_world": {
+    "easting": 500000.1,
+    "height": 762.5500000000001,
+    "northing": 7500280.1
+   },
+   "horizontal_epsg": 31983,
+   "horizontal_name": "SIRGAS 2000 / UTM zone 23S",
+   "origin_lonlat": [
+    -44.999999027027144,
+    -22.604326410510023,
+    762.5500000000001
+   ],
+   "placement": "root.transform is a least-squares affine fit mapping tile-space projected metres (E = ox + u, N = oy + v, H = oz + w) to ECEF (EPSG:4978), absorbing the projection's grid convergence and scale; glTF content is y-up: (u, v, w) = (x, -z, y)",
+   "placement_residual": {
+    "max_horizontal_m": 0.0006125783517951402,
+    "max_vertical_m": 0.0019315497949037308
+   },
+   "transform_formula": "E = ox + gx*vs ; N = oy - gz*vs ; H = oz + gy*vs",
+   "units": "meters",
+   "voxel_size": 1.0
+  },
+  "grid": {
+   "brick": 64,
+   "dims": [
+    300,
+    38,
+    280
+   ],
+   "levels": [
+    {
+     "cell_size": 8.0,
+     "level": 0
+    },
+    {
+     "cell_size": 4.0,
+     "level": 1
+    },
+    {
+     "cell_size": 2.0,
+     "level": 2
+    },
+    {
+     "cell_size": 1.0,
+     "level": 3
+    }
+   ],
+   "voxel_count": 93614,
+   "voxel_size": 1.0
+  },
+  "properties": {
+   "Classification": {
+    "aggregation": "cubes narrower than a pixel (2 x 2 raster units) read the pixel under their centre; larger cubes take the majority of the valid pixels whose centres lie in their footprint (ties: lowest code)",
+    "classes": {
+     "0": {
+      "color_source": "geotiff colour table",
+      "cubes": 2704,
+      "hex": "#005ac8",
+      "label": "Water",
+      "rgb": [
+       0,
+       90,
+       200
+      ]
+     },
+     "1": {
+      "color_source": "geotiff colour table",
+      "cubes": 2303,
+      "hex": "#dc3232",
+      "label": "Building",
+      "rgb": [
+       220,
+       50,
+       50
+      ]
+     },
+     "3": {
+      "color_source": "geotiff colour table",
+      "cubes": 19375,
+      "hex": "#147828",
+      "label": "Forest",
+      "rgb": [
+       20,
+       120,
+       40
+      ]
+     },
+     "4": {
+      "color_source": "config",
+      "cubes": 106028,
+      "hex": "#88cc44",
+      "label": "Grass",
+      "rgb": [
+       136,
+       204,
+       68
+      ]
+     }
+    },
+    "component_type": "UINT8",
+    "kind": "categorical",
+    "nodata_fill": {
+     "cubes_on_filled_pixels": 8292,
+     "cubes_outside_raster": 7749,
+     "max_distance_px": 5,
+     "policy": "nearest valid pixel (8-neighbour growth, distance in pixels)"
+    },
+    "range": {
+     "max": 4,
+     "mean": 3.7155126140633388,
+     "min": 0
+    },
+    "source": {
+     "band": 1,
+     "crs": "EPSG:31983",
+     "dtype": "uint8",
+     "file": "landcover.tif",
+     "nodata": 255.0,
+     "pixel_size": [
+      2.0,
+      2.0
+     ],
+     "size": [
+      145,
+      150
+     ],
+     "valid_fraction": 0.9954
+    }
+   },
+   "Elevation": {
+    "aggregation": "cubes narrower than a pixel (5e-05 x 5e-05 raster units) read the pixel under their centre; larger cubes take the mean of the valid pixels whose centres lie in their footprint (ties: lowest code)",
+    "component_type": "FLOAT32",
+    "kind": "continuous",
+    "nodata_fill": {
+     "cubes_on_filled_pixels": 635,
+     "cubes_outside_raster": 0,
+     "max_distance_px": 2,
+     "policy": "nearest valid pixel (8-neighbour growth, distance in pixels)"
+    },
+    "range": {
+     "max": 144.5,
+     "mean": 123.76989256966544,
+     "min": 102.75
+    },
+    "source": {
+     "band": 1,
+     "crs": "EPSG:4326",
+     "dtype": "float32",
+     "file": "elevation.tif",
+     "nodata": -9999.0,
+     "pixel_size": [
+      5e-05,
+      5e-05
+     ],
+     "size": [
+      67,
+      58
+     ],
+     "valid_fraction": 0.9959
+    }
+   }
+  },
+  "source": {
+   "file": "site.las",
+   "points": 94117
+  }
+ },
+ "tiles": {
+  "content/L0_0_0.glb": "fb2b1f19721d4d9fd9921dda5f2fdb15fcdb022e548cca26555d0ba52296648e",
+  "content/L1_0_0.glb": "76fac10d29cd86d37ce93ac36cfc7487f2ec5f345127859e81b04f4f993d656f",
+  "content/L1_0_1.glb": "9691365111991242fb51d5a189e1dcf5a809fd6f316f943aeb385dc0f2fbaff8",
+  "content/L1_1_0.glb": "e3212c0bfa87ee2c90abf037d2f520f22488364dc32fa83359dd0eaec60243ec",
+  "content/L1_1_1.glb": "6dde42d79012bad4d6f2ed6c92cacf550824666f41060087ec30c2b7cc598835",
+  "content/L2_0_0.glb": "e7323f4c743bd3a360afb5207b737dfb1222bec99f3bb09d8a598ee3c4d623b0",
+  "content/L2_0_1.glb": "ae63e4c799012cbbc907d86800bc43e6058cc96ffddb7036a7d8900bbb10d509",
+  "content/L2_0_2.glb": "cec3e7427ff1f4c62211261acc297d304af4a0e838a92dc1434d0213e8771254",
+  "content/L2_1_0.glb": "ceb136d48dedfe0136833ecc17ca3c2db776d3f2f3e50b49e69d4862779339c3",
+  "content/L2_1_1.glb": "34efbcbd895d130f954f7c51137ec992dbac9dabd730a16288b81d9972d19097",
+  "content/L2_1_2.glb": "a48934bf9b4aaec6819d3547ef435429003e505c97c0c4085dfcbe9b74f1bf5b",
+  "content/L2_2_0.glb": "431dba053affb8c1708541bb3748d625051b0b1b647b21e8b9101b1fbe11480d",
+  "content/L2_2_1.glb": "b37f321362deda8591480665aee3f3ba9ef8b5172f555d32e080df36be8822ce",
+  "content/L2_2_2.glb": "f43378043184282c3ccc92010cefdb636a8c5e8cbb54b80258dc9cf597065f1c",
+  "content/L3_0_0.glb": "a0d9aa993cbefad99d76ee9926b1701b41d513f00cbfe2f3818a33a614f2f782",
+  "content/L3_0_1.glb": "068d498415e7353afe803e7cb0627bece2913911b00173b22ada7ae82a5ba1ab",
+  "content/L3_0_2.glb": "5ffe69e2127e783c837eeacaeeeb3886927500544dffd57748c8d09f720c5d2c",
+  "content/L3_0_3.glb": "ca4ffc60c57235123d894eff358318863b2f7b90f6ebd53ea96953c082bda217",
+  "content/L3_0_4.glb": "8f84c9e17549f3d5ba486a87163344d6f25ade92d319808cdb6e78f8689c1116",
+  "content/L3_1_0.glb": "42863ce1d312dd047e6555b0a755507391316a90ddcc87d831c0c42f83cd79d5",
+  "content/L3_1_1.glb": "4d6703d208822ae16432611f50ddb44ba0d9b8eca426d444775dd32b664fa10e",
+  "content/L3_1_2.glb": "ef01a4b3fa562be83737d5f7f4b9effde9edcf9a19bb84bc1cf8f1e21fc4f522",
+  "content/L3_1_3.glb": "5c0ccfadeb49a2dd12db5c47d8af6db4ac4f77e4a29566ace3df01e0766d7bbc",
+  "content/L3_1_4.glb": "f4c63f47e9413e1d20b4282144170b152ebb1b96621c4a904ee9cf59d6a7e49e",
+  "content/L3_2_0.glb": "fe7d358bd443e815aad2ed26ef4cf0adeac9198ba3d23b473bba0fad4fdadfe9",
+  "content/L3_2_1.glb": "2016536d75756f826739c66a31c525d8a2bb4351c97572a698660351cdf1152b",
+  "content/L3_2_2.glb": "e2cb8eaee637357cdf875d83347c6e82d4beaa9452896f466dab47a23f066b76",
+  "content/L3_2_3.glb": "040029b952fc941afda9f10fe43eec223871ff63eb1738d8ffbff50f40fd8046",
+  "content/L3_2_4.glb": "fe6e9bd1c549ff03bce0cba943497f6a51ae4e3ed20390b192588a22467caceb",
+  "content/L3_3_0.glb": "d5f7aaa0c3b769a56e4cc6d0ec53ffd9ad82cff2be3e227b5ece3e06f2b4b839",
+  "content/L3_3_1.glb": "205ecd836bf78289543f2a23777bb2201cf0e1bc4509d454a5e56d7cc3619b12",
+  "content/L3_3_2.glb": "c79696ea601d6f69d273c8a5309b637c54cd2e50a181c39a3235d11ccb5800c4",
+  "content/L3_3_3.glb": "21cb8d544ebd76fec28e9a35b47057451e94cfb9eff2d8ad51de43ef33123827",
+  "content/L3_3_4.glb": "e476fea096ed9d88d0696e1bdb00ec81a0247e4617444fb594b0582a4d0f9ff1",
+  "content/L3_4_0.glb": "bea729afc908d203e4c360d8e70099e1bb893348b11642256e4eebb38c0677cc",
+  "content/L3_4_1.glb": "89b8202f51553b36281506d24ef9fae8409a5208ab01088fdf0af4d222e0ed88",
+  "content/L3_4_2.glb": "8685252726701ab401fd2b95bf4e8ec8e961ac6279e0b33302c3a78d65684e76",
+  "content/L3_4_3.glb": "0ca8e5b6d29a576027b15578b5e24a3ff9939ef9a0eaf5444c9ebbc5b2734fbc",
+  "content/L3_4_4.glb": "b9a69a606438c32eef63c14ac24173912210f3eb74fb0f26c8e8f40fd39321e2"
+ },
+ "tileset": {
+  "asset": {
+   "gltfUpAxis": "Y",
+   "tilesetVersion": "vox3dt-0.1.0",
+   "version": "1.1"
+  },
+  "geometricError": 16.0,
+  "properties": {
+   "Classification": {
+    "maximum": 4,
+    "minimum": 0
+   },
+   "Elevation": {
+    "maximum": 144.5,
+    "minimum": 102.75
+   }
+  },
+  "root": {
+   "boundingVolume": {
+    "box": [
+     152.0,
+     -140.0,
+     20.0,
+     152.0,
+     0.0,
+     0.0,
+     0.0,
+     140.0,
+     0.0,
+     0.0,
+     0.0,
+     20.0
+    ]
+   },
+   "children": [
+    {
+     "boundingVolume": {
+      "box": [
+       128.0,
+       -128.0,
+       20.0,
+       128.0,
+       0.0,
+       0.0,
+       0.0,
+       128.0,
+       0.0,
+       0.0,
+       0.0,
+       20.0
+      ]
+     },
+     "children": [
+      {
+       "boundingVolume": {
+        "box": [
+         64.0,
+         -64.0,
+         11.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         9.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           32.0,
+           -32.0,
+           9.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           7.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_0_0.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           32.0,
+           -96.0,
+           7.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           5.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_0_1.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           96.0,
+           -32.0,
+           11.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           9.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_1_0.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           96.0,
+           -96.0,
+           10.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           8.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_1_1.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_0_0.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      },
+      {
+       "boundingVolume": {
+        "box": [
+         64.0,
+         -192.0,
+         15.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         15.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           32.0,
+           -160.0,
+           13.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           11.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_0_2.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           32.0,
+           -224.0,
+           12.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_0_3.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           96.0,
+           -160.0,
+           17.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_1_2.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           96.0,
+           -224.0,
+           16.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           13.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_1_3.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_0_1.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      },
+      {
+       "boundingVolume": {
+        "box": [
+         192.0,
+         -64.0,
+         20.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         10.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           160.0,
+           -32.0,
+           17.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           5.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_2_0.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           160.0,
+           -96.0,
+           15.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           5.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_2_1.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           224.0,
+           -32.0,
+           20.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           5.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_3_0.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           224.0,
+           -96.0,
+           21.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           8.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_3_1.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_1_0.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      },
+      {
+       "boundingVolume": {
+        "box": [
+         192.0,
+         -192.0,
+         22.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         16.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           160.0,
+           -160.0,
+           20.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_2_2.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           160.0,
+           -224.0,
+           18.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_2_3.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           224.0,
+           -160.0,
+           24.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           13.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_3_2.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           224.0,
+           -224.0,
+           25.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           13.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_3_3.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_1_1.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      }
+     ],
+     "content": {
+      "uri": "content/L1_0_0.glb"
+     },
+     "geometricError": 4.0,
+     "refine": "REPLACE"
+    },
+    {
+     "boundingVolume": {
+      "box": [
+       128.0,
+       -268.0,
+       18.0,
+       128.0,
+       0.0,
+       0.0,
+       0.0,
+       12.0,
+       0.0,
+       0.0,
+       0.0,
+       18.0
+      ]
+     },
+     "children": [
+      {
+       "boundingVolume": {
+        "box": [
+         64.0,
+         -268.0,
+         12.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         12.0,
+         0.0,
+         0.0,
+         0.0,
+         12.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           32.0,
+           -268.0,
+           10.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0,
+           0.0,
+           0.0,
+           0.0,
+           9.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_0_4.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           96.0,
+           -268.0,
+           14.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0,
+           0.0,
+           0.0,
+           0.0,
+           10.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_1_4.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_0_2.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      },
+      {
+       "boundingVolume": {
+        "box": [
+         192.0,
+         -268.0,
+         20.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         12.0,
+         0.0,
+         0.0,
+         0.0,
+         14.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           160.0,
+           -268.0,
+           16.5,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0,
+           0.0,
+           0.0,
+           0.0,
+           9.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_2_4.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           224.0,
+           -268.0,
+           23.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0,
+           0.0,
+           0.0,
+           0.0,
+           10.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_3_4.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_1_2.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      }
+     ],
+     "content": {
+      "uri": "content/L1_0_1.glb"
+     },
+     "geometricError": 4.0,
+     "refine": "REPLACE"
+    },
+    {
+     "boundingVolume": {
+      "box": [
+       278.0,
+       -128.0,
+       24.0,
+       22.0,
+       0.0,
+       0.0,
+       0.0,
+       128.0,
+       0.0,
+       0.0,
+       0.0,
+       12.0
+      ]
+     },
+     "children": [
+      {
+       "boundingVolume": {
+        "box": [
+         278.0,
+         -64.0,
+         23.0,
+         22.0,
+         0.0,
+         0.0,
+         0.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         7.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           278.0,
+           -32.0,
+           23.5,
+           22.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           5.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_4_0.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           278.0,
+           -96.0,
+           21.5,
+           22.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           5.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_4_1.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_2_0.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      },
+      {
+       "boundingVolume": {
+        "box": [
+         278.0,
+         -192.0,
+         25.0,
+         22.0,
+         0.0,
+         0.0,
+         0.0,
+         64.0,
+         0.0,
+         0.0,
+         0.0,
+         11.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           278.0,
+           -160.0,
+           25.0,
+           22.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           11.0
+          ]
+         },
+         "content": {
+          "uri": "content/L3_4_2.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        },
+        {
+         "boundingVolume": {
+          "box": [
+           278.0,
+           -224.0,
+           25.5,
+           22.0,
+           0.0,
+           0.0,
+           0.0,
+           32.0,
+           0.0,
+           0.0,
+           0.0,
+           10.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_4_3.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_2_1.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      }
+     ],
+     "content": {
+      "uri": "content/L1_1_0.glb"
+     },
+     "geometricError": 4.0,
+     "refine": "REPLACE"
+    },
+    {
+     "boundingVolume": {
+      "box": [
+       278.0,
+       -268.0,
+       24.0,
+       22.0,
+       0.0,
+       0.0,
+       0.0,
+       12.0,
+       0.0,
+       0.0,
+       0.0,
+       8.0
+      ]
+     },
+     "children": [
+      {
+       "boundingVolume": {
+        "box": [
+         278.0,
+         -268.0,
+         24.0,
+         22.0,
+         0.0,
+         0.0,
+         0.0,
+         12.0,
+         0.0,
+         0.0,
+         0.0,
+         8.0
+        ]
+       },
+       "children": [
+        {
+         "boundingVolume": {
+          "box": [
+           278.0,
+           -268.0,
+           23.5,
+           22.0,
+           0.0,
+           0.0,
+           0.0,
+           12.0,
+           0.0,
+           0.0,
+           0.0,
+           7.5
+          ]
+         },
+         "content": {
+          "uri": "content/L3_4_4.glb"
+         },
+         "geometricError": 0.0,
+         "refine": "REPLACE"
+        }
+       ],
+       "content": {
+        "uri": "content/L2_2_2.glb"
+       },
+       "geometricError": 2.0,
+       "refine": "REPLACE"
+      }
+     ],
+     "content": {
+      "uri": "content/L1_1_1.glb"
+     },
+     "geometricError": 4.0,
+     "refine": "REPLACE"
+    }
+   ],
+   "content": {
+    "uri": "content/L0_0_0.glb"
+   },
+   "geometricError": 8.0,
+   "refine": "REPLACE",
+   "transform": [
+    0.7074610058226277,
+    0.7074917427075934,
+    9.049598304880863e-06,
+    0.0,
+    0.2719437881189484,
+    -0.2719437881137253,
+    0.9236558889870367,
+    0.0,
+    0.6527983156953437,
+    -0.6527650375038301,
+    -0.3843854067315589,
+    0.0,
+    4166127.5586397564,
+    -4166127.4177767057,
+    -2436619.5121780816,
+    1.0
+   ]
+  }
+ }
+}
