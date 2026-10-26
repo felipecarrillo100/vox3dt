@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import __version__
+from . import __version__, outdir
 from .gltfwriter import write_baked, write_instanced
 from .info import describe, format_text
 from .rasterprops import RasterProperty, load_config, parse_property_arg, validate_specs
@@ -79,10 +79,18 @@ output
                                 source and the GeoTIFF colour of each class
   <output>/report.json         per-level tile/cube/byte counts for this run
   <output>/log/conversion.log  a minimal, milestone-only log of this run
-  <output>/temp/               working files, deleted when the run finishes
+  <output>/.vox3dt             marker written before the first tile, so a
+                                folder vox3dt built is recognised even after
+                                a crashed run
+  <output>/.vox3dt-temp/       working files, deleted when the run finishes
                                 (unless --keep-temp)
   *.gz alongside each file when --gzip is given; with --gzip-only the tiles
   and tileset.json exist only as .gz (specs.json, report.json stay plain)
+
+  An output folder that already holds a vox3dt build is replaced only after
+  you confirm (or with --overwrite): exactly the files above are deleted and
+  anything else in the folder is kept. A folder that is not empty and not a
+  vox3dt build is refused -- nothing is deleted or written.
 
 verifying
 ---------
@@ -223,13 +231,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     output.add_argument(
         "--memory-budget", type=int, default=DEFAULT_MEMORY_BUDGET_MB, metavar="MB",
-        help=f"Approx. RAM per pyramid level before spilling to <output>/temp/ "
+        help=f"Approx. RAM per pyramid level before spilling to <output>/.vox3dt-temp/ "
              f"(default: {DEFAULT_MEMORY_BUDGET_MB}). Lower to cut peak memory "
              "further on very large inputs, at the cost of more disk I/O",
     )
     output.add_argument(
         "--keep-temp", action="store_true",
-        help="Don't delete <output>/temp/ when the run finishes (debugging)",
+        help="Don't delete <output>/.vox3dt-temp/ when the run finishes (debugging)",
+    )
+    output.add_argument(
+        "--overwrite", action="store_true",
+        help="Replace an earlier vox3dt build in --output without asking. Deletes "
+             "only vox3dt's own files; a folder that is not a vox3dt build is "
+             "still refused",
     )
     output.add_argument("-q", "--quiet", action="store_true", help="Only report errors")
     return parser
@@ -303,14 +317,27 @@ def run(args: argparse.Namespace) -> dict:
     """Build one tileset. Returns the same summary written to report.json."""
     started = time.perf_counter()
     output: Path = args.output
-    temp_dir = output / "temp"
+    temp_dir = output / outdir.TEMP_DIR
     log_dir = output / "log"
+
+    # Inputs first, then the output folder, and only then delete or write:
+    # a bad config fails in seconds and is never preceded by a deletion.
+    early: list[str] = []
+
+    def say_early(msg: str = "") -> None:
+        if not args.quiet:
+            print(msg)
+        early.append(msg)
+
+    prep = _prepare(args, say_early)
+    existing = outdir.inspect(output)
+    outdir.confirm(existing, overwrite=args.overwrite)
+    removed = outdir.clear(existing)
 
     (output / "content").mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
+    outdir.write_marker(output, __version__)
 
     log_file = open(log_dir / "conversion.log", "w", encoding="utf-8")
 
@@ -319,8 +346,14 @@ def run(args: argparse.Namespace) -> dict:
             print(msg)
         log_file.write(msg + "\n")
 
+    for msg in early:
+        log_file.write(msg + "\n")
+    if removed:
+        kept = f" (kept: {', '.join(existing.keep[:5])}{', ...' if len(existing.keep) > 5 else ''})" if existing.keep else ""
+        say(f"Deleted {removed:,} files of the previous vox3dt build in {output}{kept}.")
+
     try:
-        report = _run(args, temp_dir, say, started)
+        report = _run(args, prep, temp_dir, say, started)
     finally:
         log_file.close()
         if not args.keep_temp and temp_dir.exists():
@@ -329,10 +362,8 @@ def run(args: argparse.Namespace) -> dict:
     return report
 
 
-def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
-    output: Path = args.output
-    budget_bytes = args.memory_budget * 1024 * 1024
-
+def _prepare(args: argparse.Namespace, say) -> dict:
+    """Everything checkable before the output folder is touched: header, CRS, rasters."""
     declared_epsg = header_epsg(args.input)
     if args.epsg is not None and declared_epsg is not None:
         say(f"Note: LAS already declares EPSG:{declared_epsg}; ignoring --epsg {args.epsg}.")
@@ -357,6 +388,14 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
             if coverage <= 0:
                 raise ValueError(f"{prop_spec.name}: raster does not overlap the LAS bounds")
             rasters.append(raster)
+    return {"spec": spec, "geo": geo, "epsg_assumed": epsg_assumed, "rasters": rasters}
+
+
+def _run(args: argparse.Namespace, prep: dict, temp_dir: Path, say, started: float) -> dict:
+    output: Path = args.output
+    budget_bytes = args.memory_budget * 1024 * 1024
+    spec, geo, epsg_assumed = prep["spec"], prep["geo"], prep["epsg_assumed"]
+    rasters: list[RasterProperty] = prep["rasters"]
     next_feature_id = [0]
     float_feature_tiles: list[str] = []
 
@@ -516,6 +555,9 @@ def _run(args: argparse.Namespace, temp_dir: Path, say, started: float) -> dict:
             "exact_color": args.color_bits >= 8,
         },
     }
+    if args.draco:
+        # Position quantization, so verify.py can bound Draco's rounding.
+        specs["encoding"]["draco_bits"] = args.draco_bits
     if rasters:
         specs["encoding"]["feature_id"] = (
             "_FEATURE_ID_0 per vertex (EXT_mesh_features), constant over each cube; row index into "
@@ -581,6 +623,9 @@ def main(argv=None) -> int:
             run_info(args)
         else:
             run(args)
+    except outdir.Cancelled as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     except Exception as exc:  # noqa: BLE001 -- a CLI should not show a traceback
         print(f"vox3dt: error: {exc}", file=sys.stderr)
         return 1

@@ -124,8 +124,9 @@ python3 verify.py production/vale_props input/Mac_complete_pointcloud_shaped_and
 | `--draco-bits` | `14` | Draco position quantization bits |
 | `--palette-bits` | `2` | Instanced mode: colour palette size (2 → ≤64 entries) |
 | `--chunk-points` | `5,000,000` | Points per LAS read pass; lower to cut peak memory |
-| `--memory-budget` | `256` MB | Approx. RAM per pyramid level before spilling to `<output>/temp/`; lower to cut peak memory further, at the cost of more disk I/O |
-| `--keep-temp` | off | Don't delete `<output>/temp/` when the run finishes (debugging) |
+| `--memory-budget` | `256` MB | Approx. RAM per pyramid level before spilling to `<output>/.vox3dt-temp/`; lower to cut peak memory further, at the cost of more disk I/O |
+| `--keep-temp` | off | Don't delete `<output>/.vox3dt-temp/` when the run finishes (debugging) |
+| `--overwrite` | off | Replace an earlier vox3dt build in `--output` without asking — see [Output folder safety](#output-folder-safety) |
 | `--epsg` | none | Assume this EPSG when the LAS declares no CRS (ignored, with a notice, if it already has one) |
 | `--info` | off | Print header-only metadata and exit — no point data is read, so it's fast on any file size. `--output` is not required |
 | `--property` | none | `NAME=PATH`: sample a GeoTIFF into a per-cube property (`EXT_structural_metadata`). Repeatable. Adds `FeatureID` |
@@ -144,8 +145,47 @@ Output:
 <output>/report.json         per-level tile/cube/byte counts for the run
 <output>/properties.config.json  copy of --properties, when given
 <output>/log/conversion.log  a minimal, milestone-only log of the run
-<output>/temp/               working files; deleted when the run finishes
+<output>/.vox3dt             marker written before the first tile, so a folder
+                              vox3dt built is recognised even after a crashed run
+<output>/.vox3dt-temp/       working files; deleted when the run finishes
                               unless --keep-temp is given
+```
+
+### Output folder safety
+
+vox3dt deletes only files it wrote itself, matched by exact name, and only in
+a folder it recognises as its own build (by `report.json`, `tileset.json` or
+the `.vox3dt` marker):
+
+| `--output` is | What happens |
+|---|---|
+| missing, or empty | the build goes ahead |
+| an earlier vox3dt build | in a terminal you are asked first (default **No**); from a script the run stops unless `--overwrite` is given. Then the previous build's files are deleted and anything else in the folder is kept |
+| anything else that is not empty | refused: nothing is deleted or written |
+
+The files it may delete: `tileset.json[.gz]`, `specs.json`, `report.json`,
+`properties.config.json`, `.vox3dt`, `content/L<level>_<x>_<z>.glb[.gz]`
+(directly in `content/`, never deeper), `log/conversion.log` and its own
+working folder `.vox3dt-temp/` — then `content/` and `log/` if that left them
+empty. A `content/` or `log/` that is a link to another folder is refused. All
+of this is checked after the inputs (LAS header, CRS, rasters), so a bad config
+fails before anything is asked or deleted.
+
+Without it, re-running into the same folder left the previous build's tiles
+behind, which `tools/upload_s3.py` would upload with the new ones.
+
+```
+production/vale_props already holds a vox3dt tileset:
+  built 2026-10-23 00:56 by vox3dt 0.1.0, 6,697 tiles, 1.9 GB
+
+To rebuild, these vox3dt files will be deleted:
+  content/   6,697 tiles
+  tileset.json.gz, specs.json, report.json, properties.config.json, log/conversion.log
+
+These files are not vox3dt's and will be kept:
+  serve.json
+
+Delete 6,702 files and rebuild? [y/N]
 ```
 
 ### Inspecting a file before converting it
@@ -339,7 +379,7 @@ whole pipeline processes one tile at a time instead of one whole level.
 
 Cell aggregates are accumulated up to `--memory-budget` (default 256 MB) per
 pyramid level; past that, `extsort.py` spills sorted, unique-by-key runs to
-`<output>/temp/` and reads them back through a bounded k-way merge. Because
+`<output>/.vox3dt-temp/` and reads them back through a bounded k-way merge. Because
 this data is a thin surface, not a solid volume, occupancy drops sharply per
 level, so coarser levels usually never cross the budget and stay resident in
 RAM with zero disk I/O — the same code path handles both cases with no
@@ -480,6 +520,8 @@ time and paths. On top of that every run passes `verify.py`, the georeference
 is checked against known answers (the grid corners land on the LAS bounds,
 not a voxel south), runs that must agree do (gzip, memory budget and CRS
 handling never change a tile), and the command-line errors stay clear.
+`tests/test_outdir.py` covers [output folder safety](#output-folder-safety):
+every refusal and every "no" must leave the folder byte-for-byte unchanged.
 
 When an output change is intended, regenerate and review the diff:
 
@@ -576,7 +618,33 @@ writer.
 compiles from source. If pip does start building, your Python is likely x86 under
 Rosetta.
 
+## Changelog
+
+**0.1.1**
+- Output folder safety: an earlier vox3dt build in `--output` is replaced only
+  after confirmation or `--overwrite`, deleting exactly vox3dt's own files; any
+  other non-empty folder is refused. Previous builds' tiles no longer linger.
+- The working folder is `.vox3dt-temp/` instead of `temp/`, which an earlier
+  version deleted unconditionally — including a `temp/` folder of your own.
+- A `.vox3dt` marker is written before the first tile.
+- `specs.json` records `draco_bits` for Draco builds.
+- `verify.py`: bounding boxes are held to 1 mm instead of up to a full cell
+  (boxes 0.9 m too small used to pass); Draco positions are checked against
+  their exact bounds within one quantization step; non-georeferenced tilesets
+  are verified instead of crashing.
+- Tiles are byte-identical to 0.1.0's.
+
+**0.1.0** — the voxel pipeline as built for the production site, with its
+regression test suite.
+
 ## Known gaps
+
+- **`verify.py` stops at the first malformed tile** (its GLB structure checks
+  are `assert`s, which also vanish under `python -O`) instead of reporting it
+  and going on; it reads `.glb` when both `.glb` and `.glb.gz` exist, so `.gz`
+  twins are not checked (the test suite checks them); it verifies the tiles in
+  `content/` rather than those `tileset.json` references; and its placement
+  check does not understand `--mode instanced`.
 
 - **LuciadRIA's selection highlight is wrong for `FeatureID` above 2²⁴
   (16,777,216).** Picking returns the exact `FeatureID` and properties, but

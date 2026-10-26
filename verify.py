@@ -12,19 +12,25 @@ Checks the things that would otherwise fail silently in a viewer:
    with the descriptors inside the payload. A decode round-trip alone cannot
    catch a mismatch here, because DracoPy resolves attributes by type; two
    real bugs reached a browser this way.
-4. Draco normals survive quantization as unit-length, axis-aligned vectors.
+4. Draco normals survive quantization as unit-length, axis-aligned vectors,
+   and decoded positions stay within one quantization step of the accessor's
+   exact min/max (the step comes from specs.json's draco_bits; 14 if absent).
 5. The grid origin matches the LAS header's bounding box, the root transform's
    axes are near-orthogonal, near unit scale and right-handed, and the site
    lands inside its CRS's area of use.
 6. The tile tree is a well-formed quadtree: at most 4 children, child
    geometricError strictly below parent, leaves at 0, and every child's box
    inside its parent's. The root box is within one root cell of the LAS bounds.
-7. Every tile's geometry lies inside its declared bounding volume.
+7. Every tile's geometry lies inside its declared bounding volume, to 1 mm:
+   the real vertices for plain tiles, the exact pre-quantization bounds for
+   Draco (see 4), and the full cubes around instance centres.
 8. Placement: the root transform puts a lattice of grid points spanning the
    site where the projection says, within half a voxel horizontally and one
    vertically; and the outermost cube edges, pushed through it to ECEF and back
    into the LAS CRS, land on the LAS bounds -- west and south on them, east and
-   north overhanging by less than one voxel -- at all four corners.
+   north overhanging by less than one voxel -- at all four corners. 5 and 8
+   are skipped for a non-georeferenced tileset (no root transform), and 8 is
+   not meaningful for --mode instanced (it reads the single cube's bounds).
 9. Property tiles (--property): EXT_mesh_features points _FEATURE_ID_0 at an
    EXT_structural_metadata property table whose columns are 8-byte aligned and
    hold one value per feature; _FEATURE_ID_0 is an integer per vertex, constant
@@ -185,15 +191,15 @@ def check_draco_attribute_mapping(name: str, gltf: dict, prim: dict, ext: dict, 
         )
 
 
-def check_draco(name: str, gltf: dict, binary: bytes) -> None:
+def check_draco(name: str, gltf: dict, binary: bytes, draco_bits: int = 14) -> None:
     for i, prim in enumerate(gltf["meshes"][0]["primitives"]):
         ext = prim.get("extensions", {}).get("KHR_draco_mesh_compression")
         if ext:
             label = name if len(gltf["meshes"][0]["primitives"]) == 1 else f"{name}#{i}"
-            _check_draco_primitive(label, gltf, prim, ext, binary)
+            _check_draco_primitive(label, gltf, prim, ext, binary, draco_bits)
 
 
-def _check_draco_primitive(name: str, gltf: dict, prim: dict, ext: dict, binary: bytes) -> None:
+def _check_draco_primitive(name: str, gltf: dict, prim: dict, ext: dict, binary: bytes, draco_bits: int) -> None:
     import DracoPy
 
     view = gltf["bufferViews"][ext["bufferView"]]
@@ -217,6 +223,21 @@ def _check_draco_primitive(name: str, gltf: dict, prim: dict, ext: dict, binary:
         len(mesh.points) <= declared,
         f"{name}: decoded vertex count {len(mesh.points)} <= declared {declared}",
     )
+    # The POSITION accessor's min/max are the exact, pre-quantization bounds
+    # (check_bounds holds them to the tile's box). Decoded positions may differ
+    # from them by Draco's rounding: at most one step of range / (2^bits - 1),
+    # where range is the largest extent of the attribute's bounding box.
+    acc = gltf["accessors"][prim["attributes"]["POSITION"]]
+    if "min" in acc and len(mesh.points):
+        pts = np.asarray(mesh.points, dtype=np.float64).reshape(-1, 3)
+        lo, hi = np.array(acc["min"]), np.array(acc["max"])
+        step = float((hi - lo).max()) / (2 ** draco_bits - 1)
+        off = max(float((lo - pts.min(axis=0)).max()), float((pts.max(axis=0) - hi).max()), 0.0)
+        check(
+            off <= step + 1e-6,
+            f"{name}: decoded positions within one {draco_bits}-bit Draco step ({step * 1000:.1f} mm) "
+            f"of the accessor bounds (worst {off * 1000:.1f} mm)",
+        )
     # Normals must still be axis-aligned unit vectors after quantization.
     if mesh.normals is not None and len(mesh.normals):
         n = np.asarray(mesh.normals, dtype=np.float64)
@@ -333,14 +354,26 @@ def check_bounds(root_dir: Path, tileset: dict) -> None:
                 acc = gltf["accessors"][inst["attributes"]["TRANSLATION"]]
                 v = gltf["bufferViews"][acc["bufferView"]]
                 off = v.get("byteOffset", 0) + acc.get("byteOffset", 0)
-                pts.append(
-                    np.frombuffer(binary, "<f4", acc["count"] * 3, off).reshape(-1, 3)
-                )
+                centres = np.frombuffer(binary, "<f4", acc["count"] * 3, off).reshape(-1, 3).astype(np.float64)
+                # Instances are cube centres; the cubes reach half a cell further.
+                cs = _cell_size_of(tileset, uri.split("/")[-1])
+                pts += [centres - cs / 2, centres + cs / 2]
         if not pts:
-            # baked: use each primitive's POSITION accessor min/max instead
+            # baked: the real vertices when they are stored plainly; under
+            # Draco, the accessor's exact pre-quantization min/max (check_draco
+            # holds the decoded vertices to those, within Draco's rounding).
             for prim in gltf["meshes"][0]["primitives"]:
                 acc = gltf["accessors"][prim["attributes"]["POSITION"]]
-                if "min" in acc:
+                if "bufferView" in acc:
+                    v = gltf["bufferViews"][acc["bufferView"]]
+                    off = v.get("byteOffset", 0) + acc.get("byteOffset", 0)
+                    data = np.frombuffer(binary, "<f4", acc["count"] * 3, off).reshape(-1, 3).astype(np.float64)
+                    if "min" in acc:
+                        check(bool(np.allclose(data.min(axis=0), acc["min"], atol=1e-6)
+                                   and np.allclose(data.max(axis=0), acc["max"], atol=1e-6)),
+                              f"{uri}: POSITION accessor min/max match its data")
+                    pts.append(data)
+                elif "min" in acc:
                     pts.append(np.array([acc["min"], acc["max"]], dtype=np.float64))
             if not pts:
                 continue
@@ -348,10 +381,9 @@ def check_bounds(root_dir: Path, tileset: dict) -> None:
         p = np.concatenate(pts)
         # glTF y-up -> 3D Tiles z-up ENU: (x, y, z) -> (x, -z, y)
         enu = np.stack([p[:, 0], -p[:, 2], p[:, 1]], axis=1)
-        # Allow half a cell of slack: instance translations are cube centres.
-        slack = float(node["geometricError"]) if node["geometricError"] else 1.0
-        inside = np.all(np.abs(enu - centre) <= half + slack + 1e-6, axis=1)
-        if not check(bool(inside.all()), f"{uri}: geometry inside its bounding box"):
+        # vox3dt writes tight boxes, so 1 mm covers float32 rounding and nothing more.
+        over = float((np.abs(enu - centre) - half).max())
+        if not check(over <= 1e-3, f"{uri}: geometry inside its bounding box (worst overflow {max(over, 0) * 1000:.1f} mm)"):
             worst = np.abs(enu - centre).max(axis=0) - half
             print(f"      overflow by {worst}")
         checked += 1
@@ -520,7 +552,7 @@ def check_metadata(root_dir: Path, tileset: dict) -> None:
 
 def _cell_size_of(tileset: dict, file_name: str) -> float:
     """A tile's cell size: its geometricError, or the voxel size at the leaves."""
-    if not hasattr(_cell_size_of, "cache"):
+    if getattr(_cell_size_of, "tileset", None) is not tileset:
         cache = {}
 
         def walk(node, parent_err=None):
@@ -534,6 +566,7 @@ def _cell_size_of(tileset: dict, file_name: str) -> float:
         # The tileset's own geometricError stands in as the root's parent, for a single-tile tileset.
         walk(tileset["root"], tileset["geometricError"])
         _cell_size_of.cache = cache
+        _cell_size_of.tileset = tileset
     return _cell_size_of.cache[file_name]
 
 
@@ -588,13 +621,20 @@ def main(root: Path, las: Path, tileset_name: str = "tileset.json") -> int:
     tileset = json.loads(raw)
     geo = load_georeference(root, tileset)
 
+    specs = json.loads((root / "specs.json").read_text()) if (root / "specs.json").exists() else {}
+    # Builds before 0.1.1 did not record it; 14 was the only value they used by default.
+    draco_bits = specs.get("encoding", {}).get("draco_bits", 14)
+
     print("  tree structure")
     check_tree(tileset)
     check_root_extent(tileset, geo, las)
-    print("  georeference")
-    check_georeference(tileset, las, geo)
-    print("  placement")
-    check_placement(root, tileset, geo, las)
+    if "transform" in tileset["root"]:
+        print("  georeference")
+        check_georeference(tileset, las, geo)
+        print("  placement")
+        check_placement(root, tileset, geo, las)
+    else:
+        print("  non-georeferenced (no root transform): georeference and placement checks skipped")
     print("  content integrity")
     n_draco = 0
     has_metadata = False
@@ -604,7 +644,7 @@ def main(root: Path, las: Path, tileset_name: str = "tileset.json") -> int:
         has_metadata |= "EXT_structural_metadata" in gltf.get("extensionsUsed", [])
         check_accessors(path.name, gltf, binary)
         before = len(OK) + len(FAIL)
-        check_draco(path.name, gltf, binary)
+        check_draco(path.name, gltf, binary, draco_bits)
         if len(OK) + len(FAIL) > before:
             n_draco += 1
     print(f"    -> {len(files)} tiles, {n_draco} draco-encoded")

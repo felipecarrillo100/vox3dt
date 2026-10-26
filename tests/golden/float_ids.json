@@ -1,5 +1,6 @@
 {
  "files": [
+  ".vox3dt",
   "content/L0_0_0.glb",
   "content/L1_0_0.glb",
   "content/L1_0_1.glb",
@@ -22,7 +23,7 @@
    "L1_0_0"
   ],
   "feature_ids": 121175,
-  "generator": "vox3dt 0.1.0",
+  "generator": "vox3dt 0.1.1",
   "grid_dims": [
    300,
    38,
@@ -94,6 +95,7 @@
    "color_bits": 8,
    "content": "glb",
    "draco": true,
+   "draco_bits": 14,
    "exact_color": true,
    "feature_id": "_FEATURE_ID_0 per vertex (EXT_mesh_features), constant over each cube; row index into the tile's EXT_structural_metadata property table (class 'cube'). UNSIGNED_SHORT inside Draco, FLOAT in tiles with more than 65536 cubes",
    "mode": "baked"
@@ -105,7 +107,7 @@
    "property": "FeatureID",
    "scope": "unique per cube across the whole tileset (a cube at each level is its own feature)"
   },
-  "generator": "vox3dt 0.1.0",
+  "generator": "vox3dt 0.1.1",
   "georeference": {
    "axis_mapping": {
     "grid_x": "easting",
@@ -282,7 +284,7 @@
  "tileset": {
   "asset": {
    "gltfUpAxis": "Y",
-   "tilesetVersion": "vox3dt-0.1.0",
+   "tilesetVersion": "vox3dt-0.1.1",
    "version": "1.1"
   },
   "geometricError": 4.0,

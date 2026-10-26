@@ -109,7 +109,7 @@ def _read(path: Path) -> bytes:
 def manifest(out: Path) -> dict:
     files = sorted(
         p.relative_to(out).as_posix() for p in out.rglob("*")
-        if p.is_file() and p.relative_to(out).parts[0] not in ("log", "temp")
+        if p.is_file() and p.relative_to(out).parts[0] not in ("log", ".vox3dt-temp")
     )
     tiles = {}
     for name in files:

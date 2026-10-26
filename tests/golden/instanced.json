@@ -1,5 +1,6 @@
 {
  "files": [
+  ".vox3dt",
   "content/L0_0_0.glb",
   "content/L1_0_0.glb",
   "content/L1_0_1.glb",
@@ -51,7 +52,7 @@
   "draco": false,
   "epsg": 31983,
   "exact_color": true,
-  "generator": "vox3dt 0.1.0",
+  "generator": "vox3dt 0.1.1",
   "grid_dims": [
    300,
    38,
@@ -117,7 +118,7 @@
    "exact_color": true,
    "mode": "instanced"
   },
-  "generator": "vox3dt 0.1.0",
+  "generator": "vox3dt 0.1.1",
   "georeference": {
    "axis_mapping": {
     "grid_x": "easting",
@@ -224,7 +225,7 @@
  "tileset": {
   "asset": {
    "gltfUpAxis": "Y",
-   "tilesetVersion": "vox3dt-0.1.0",
+   "tilesetVersion": "vox3dt-0.1.1",
    "version": "1.1"
   },
   "geometricError": 16.0,
